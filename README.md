@@ -35,8 +35,6 @@ One import brings in everything:
 import collab.core;
 ```
 
-[`fmt`](https://github.com/fmtlib/fmt) is re-exported, so `fmt::format_string` appears in the logging API.
-
 The library's own version is exposed as a `semver` constant:
 
 ```cpp
