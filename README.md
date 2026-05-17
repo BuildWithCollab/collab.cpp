@@ -92,52 +92,32 @@ collab::core::manifest m{
 
 ## Logging
 
-Sink-based logging with both plain-string and `fmt`-style variadic overloads. Level filtering happens *before* `fmt::format` runs, so filtered messages don't pay formatting cost.
+Library code just calls `collab::log::info(...)` (or `warn`, `error`, etc.) and gets on with its day — no sinks, no setup, no plumbing. The app or binary at the top of the stack installs sinks once at startup; everything underneath stays oblivious to where output ends up. With no sinks installed, messages are silently dropped. Level filtering happens *before* `fmt::format` runs, so filtered messages don't pay formatting cost. The default level is `info`.
 
-### Levels
-
-```cpp
-enum class collab::log::level { trace, debug, info, warn, error, critical, off };
-```
-
-### Configuration
+**Library code — log freely:**
 
 ```cpp
-void  collab::log::set_level(level l);
-level collab::log::get_level();
+import collab.core;
 
-void  collab::log::add_sink(std::unique_ptr<sink> s);
-void  collab::log::clear_sinks();
+void connect(std::string_view host, int port) {
+    collab::log::info("connecting to {}:{}", host, port);
+    // ...
+    collab::log::warn("retry attempt {} after {}ms", n, elapsed.count());
+}
 ```
 
-### Built-in sinks
+**App code — install sinks at startup:**
 
 ```cpp
-std::unique_ptr<sink> make_stdout_sink();
-std::unique_ptr<sink> make_stdout_color_sink();
-std::unique_ptr<sink> make_stderr_sink();
-std::unique_ptr<sink> make_stderr_color_sink();
-std::unique_ptr<sink> make_file_sink(std::filesystem::path path);
+int main() {
+    collab::log::add_sink(collab::log::make_stdout_color_sink());
+    collab::log::add_sink(collab::log::make_file_sink("app.log"));
+    collab::log::set_level(collab::log::level::debug);
+    // ...
+}
 ```
 
-### Custom sinks
-
-Subclass `collab::log::sink` and override `write(level, std::string_view)`. Register with `add_sink(std::make_unique<my_sink>(...))`.
-
-### Logging
-
-```cpp
-// Plain string overloads
-collab::log::trace   (std::string_view msg);
-collab::log::debug   (std::string_view msg);
-collab::log::info    (std::string_view msg);
-collab::log::warn    (std::string_view msg);
-collab::log::error   (std::string_view msg);
-collab::log::critical(std::string_view msg);
-
-// fmt-style variadic overloads
-collab::log::info("connected to {} in {}ms", host, elapsed.count());
-```
+Built-in sinks cover stdout/stderr (plain or colored) and files. For anything else, subclass `collab::log::sink` (override `write(level, std::string_view)`) and pass a `std::make_unique<my_sink>(...)` to `add_sink`.
 
 See [`docs/logging.md`](docs/logging.md) for additional notes.
 
