@@ -11,7 +11,7 @@ module;
 
 export module collab.core;
 
-export import :signal;
+export import :publisher;
 export import :term;
 
 // ── Value types (single source of truth) ──────────────────────────────────

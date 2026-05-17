@@ -9,34 +9,35 @@ module;
 #include <utility>
 #include <vector>
 
-export module collab.core:signal;
+export module collab.core:publisher;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 📡 collab::core::signal — multi-subscriber, thread-safe signal/slot.
+// 📡 collab::core::publisher — multi-subscriber, thread-safe pub/sub primitive.
 //
-// Emission is `operator()`, not `emit()`. Qt's qtmetamacros.h defines `emit`
-// as an empty preprocessor macro, which silently mangles any `sig.emit(args)`
+// Publishing is `operator()`, not `emit()`. Qt's qtmetamacros.h defines `emit`
+// as an empty preprocessor macro, which silently mangles any `pub.emit(args)`
 // call in a TU that also includes a Qt header. Using call syntax sidesteps
-// that collision entirely — `sig(args)` reads naturally and survives Qt.
+// that collision entirely — `pub(args)` reads naturally and survives Qt.
 //
 // Threading contract
 // ──────────────────
 //   • connect(), operator(), disconnect(), and subscriber_count() are all
-//     safe to call concurrently from any thread on the same signal.
+//     safe to call concurrently from any thread on the same publisher.
 //   • operator() does not hold the internal lock while invoking handlers. It
-//     snapshots the slot list under a shared lock, releases the lock, then
-//     iterates. Reentrancy and recursive emission are deadlock-free.
+//     snapshots the subscriber list under a shared lock, releases the lock,
+//     then iterates. Reentrancy and recursive publication are deadlock-free.
 //   • A handler invoked from operator() may freely call connect(),
-//     disconnect(), or operator() (including on the same signal).
-//   • Disconnect during an in-flight emission affects subsequent emissions,
-//     not the current one. Handlers already captured in the current snapshot
-//     still fire — their slots are kept alive by the snapshot's shared_ptrs.
-//   • A subscription may safely outlive its signal. Disconnect becomes a
-//     no-op once the signal is destroyed. No use-after-free is possible.
+//     disconnect(), or operator() (including on the same publisher).
+//   • Disconnect during an in-flight publication affects subsequent
+//     publications, not the current one. Handlers already captured in the
+//     current snapshot still fire — their slots are kept alive by the
+//     snapshot's shared_ptrs.
+//   • A subscription may safely outlive its publisher. Disconnect becomes a
+//     no-op once the publisher is destroyed. No use-after-free is possible.
 //
 // Convention
 // ──────────
-//   Only the class that owns the signal invokes it. The type system does
+//   Only the class that owns the publisher invokes it. The type system does
 //   not enforce this — code review and discipline do. Same convention as
 //   Qt 5+, Boost.Signals2, sigc++.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,25 +46,25 @@ namespace collab::core {
 
 namespace detail {
 
-struct slot_base {
-    virtual ~slot_base() = default;
+struct subscriber_base {
+    virtual ~subscriber_base() = default;
 };
 
 template <typename... Args>
-struct slot final : slot_base {
+struct subscriber final : subscriber_base {
     std::function<void(Args...)> handler;
-    explicit slot(std::function<void(Args...)> h) : handler(std::move(h)) {}
+    explicit subscriber(std::function<void(Args...)> h) : handler(std::move(h)) {}
 };
 
-struct signal_control_block {
-    std::shared_mutex                       mutex;
-    std::vector<std::shared_ptr<slot_base>> slots;
+struct publisher_control_block {
+    std::shared_mutex                             mutex;
+    std::vector<std::shared_ptr<subscriber_base>> subscribers;
 };
 
 }  // namespace detail
 
 // 🎟 RAII subscription token. Move-only. Auto-disconnects on destruction.
-// Safe to outlive its signal — disconnect becomes a no-op then.
+// Safe to outlive its publisher — disconnect becomes a no-op then.
 export class subscription {
 public:
     subscription() noexcept = default;
@@ -113,76 +114,76 @@ private:
     std::function<bool()> connected_fn_;
 };
 
-// 📡 Multi-subscriber signal. See top-of-file contract for semantics.
+// 📡 Multi-subscriber publisher. See top-of-file contract for semantics.
 export template <typename... Args>
-class signal {
+class publisher {
 public:
     using handler = std::function<void(Args...)>;
 
-    signal() : control_{std::make_shared<detail::signal_control_block>()} {}
+    publisher() : control_{std::make_shared<detail::publisher_control_block>()} {}
 
-    signal(const signal&)            = delete;
-    signal& operator=(const signal&) = delete;
-    signal(signal&&)                 = delete;
-    signal& operator=(signal&&)      = delete;
+    publisher(const publisher&)            = delete;
+    publisher& operator=(const publisher&) = delete;
+    publisher(publisher&&)                 = delete;
+    publisher& operator=(publisher&&)      = delete;
 
     [[nodiscard]] subscription connect(handler fn) {
-        auto slot_ptr =
-            std::make_shared<detail::slot<Args...>>(std::move(fn));
+        auto sub_ptr =
+            std::make_shared<detail::subscriber<Args...>>(std::move(fn));
         {
             std::unique_lock lock{control_->mutex};
-            control_->slots.push_back(slot_ptr);
+            control_->subscribers.push_back(sub_ptr);
         }
 
-        std::weak_ptr<detail::signal_control_block> weak_ctrl = control_;
-        std::weak_ptr<detail::slot_base>            weak_slot = slot_ptr;
+        std::weak_ptr<detail::publisher_control_block> weak_ctrl = control_;
+        std::weak_ptr<detail::subscriber_base>         weak_sub  = sub_ptr;
 
         return subscription{
-            [weak_ctrl, weak_slot]() {
+            [weak_ctrl, weak_sub]() {
                 auto ctrl = weak_ctrl.lock();
                 if (!ctrl) return;
-                auto sp = weak_slot.lock();
+                auto sp = weak_sub.lock();
                 if (!sp) return;
                 std::unique_lock lock{ctrl->mutex};
-                auto&            v  = ctrl->slots;
+                auto&            v  = ctrl->subscribers;
                 auto             it = std::find(v.begin(), v.end(), sp);
                 if (it != v.end()) v.erase(it);
             },
-            [weak_ctrl, weak_slot]() -> bool {
+            [weak_ctrl, weak_sub]() -> bool {
                 auto ctrl = weak_ctrl.lock();
                 if (!ctrl) return false;
-                auto sp = weak_slot.lock();
+                auto sp = weak_sub.lock();
                 if (!sp) return false;
                 std::shared_lock lock{ctrl->mutex};
-                const auto&      v = ctrl->slots;
+                const auto&      v = ctrl->subscribers;
                 return std::find(v.begin(), v.end(), sp) != v.end();
             }};
     }
 
     void operator()(Args... args) {
         // Local strong ref keeps the control block alive if `*this` is
-        // destroyed on another thread mid-emission. Without it, the lock and
-        // snapshot lines below would access a freed control block.
+        // destroyed on another thread mid-publication. Without it, the lock
+        // and snapshot lines below would access a freed control block.
         auto ctrl = control_;
-        std::vector<std::shared_ptr<detail::slot_base>> snapshot;
+        std::vector<std::shared_ptr<detail::subscriber_base>> snapshot;
         {
             std::shared_lock lock{ctrl->mutex};
-            snapshot = ctrl->slots;
+            snapshot = ctrl->subscribers;
         }
         for (auto& base : snapshot) {
-            // Every slot in our control_ is slot<Args...> by construction.
-            auto* typed = static_cast<detail::slot<Args...>*>(base.get());
+            // Every entry in our control_ is subscriber<Args...> by construction.
+            auto* typed = static_cast<detail::subscriber<Args...>*>(base.get());
             typed->handler(args...);
         }
     }
 
     std::size_t subscriber_count() const {
         std::shared_lock lock{control_->mutex};
-        return control_->slots.size();
+        return control_->subscribers.size();
     }
 
 private:
-    std::shared_ptr<detail::signal_control_block> control_;
+    std::shared_ptr<detail::publisher_control_block> control_;
 };
 
 }  // namespace collab::core

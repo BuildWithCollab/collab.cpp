@@ -13,107 +13,111 @@ import collab.core;
 using namespace collab::core;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1–4: Basic connect / emit / disconnect
+// 1–4: Basic connect / publish / disconnect
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("signal<int>: single subscriber receives an emit", "[signal][basic]") {
-    signal<int> sig;
-    int         received = 0;
-    auto        sub      = sig.connect([&](int x) { received = x; });
+TEST_CASE("publisher<int>: single subscriber receives a publication",
+          "[publisher][basic]") {
+    publisher<int> pub;
+    int            received = 0;
+    auto           sub      = pub.connect([&](int x) { received = x; });
 
-    sig(42);
+    pub(42);
 
     REQUIRE(received == 42);
 }
 
-TEST_CASE("signal<>: multiple subscribers all fire in connection order",
-          "[signal][basic]") {
-    signal<>         sig;
+TEST_CASE("publisher<>: multiple subscribers all fire in subscription order",
+          "[publisher][basic]") {
+    publisher<>      pub;
     std::vector<int> order;
 
-    auto s1 = sig.connect([&] { order.push_back(1); });
-    auto s2 = sig.connect([&] { order.push_back(2); });
-    auto s3 = sig.connect([&] { order.push_back(3); });
+    auto s1 = pub.connect([&] { order.push_back(1); });
+    auto s2 = pub.connect([&] { order.push_back(2); });
+    auto s3 = pub.connect([&] { order.push_back(3); });
 
-    sig();
+    pub();
 
     REQUIRE(order == std::vector<int>{1, 2, 3});
 }
 
-TEST_CASE("signal<>: emit with zero subscribers is a no-op", "[signal][basic]") {
-    signal<int> sig;
-    REQUIRE_NOTHROW(sig(7));
-    REQUIRE(sig.subscriber_count() == 0);
+TEST_CASE("publisher<>: publish with zero subscribers is a no-op",
+          "[publisher][basic]") {
+    publisher<int> pub;
+    REQUIRE_NOTHROW(pub(7));
+    REQUIRE(pub.subscriber_count() == 0);
 }
 
 TEST_CASE("subscriber_count() reflects connect and disconnect",
-          "[signal][basic]") {
-    signal<> sig;
-    REQUIRE(sig.subscriber_count() == 0);
+          "[publisher][basic]") {
+    publisher<> pub;
+    REQUIRE(pub.subscriber_count() == 0);
 
-    auto s1 = sig.connect([] {});
-    auto s2 = sig.connect([] {});
-    REQUIRE(sig.subscriber_count() == 2);
+    auto s1 = pub.connect([] {});
+    auto s2 = pub.connect([] {});
+    REQUIRE(pub.subscriber_count() == 2);
 
     s1.disconnect();
-    REQUIRE(sig.subscriber_count() == 1);
+    REQUIRE(pub.subscriber_count() == 1);
 
     {
-        auto s3 = sig.connect([] {});
-        REQUIRE(sig.subscriber_count() == 2);
+        auto s3 = pub.connect([] {});
+        REQUIRE(pub.subscriber_count() == 2);
     }  // s3's destructor disconnects
-    REQUIRE(sig.subscriber_count() == 1);
+    REQUIRE(pub.subscriber_count() == 1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 5–8: subscription lifetime
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("subscription destructor disconnects", "[signal][lifetime]") {
-    signal<> sig;
-    int      calls = 0;
+TEST_CASE("subscription destructor disconnects", "[publisher][lifetime]") {
+    publisher<> pub;
+    int         calls = 0;
     {
-        auto sub = sig.connect([&] { ++calls; });
-        sig();
+        auto sub = pub.connect([&] { ++calls; });
+        pub();
         REQUIRE(calls == 1);
     }
-    sig();
+    pub();
     REQUIRE(calls == 1);
-    REQUIRE(sig.subscriber_count() == 0);
+    REQUIRE(pub.subscriber_count() == 0);
 }
 
-TEST_CASE("Explicit disconnect() removes the handler", "[signal][lifetime]") {
-    signal<> sig;
-    int      calls = 0;
-    auto     sub   = sig.connect([&] { ++calls; });
+TEST_CASE("Explicit disconnect() removes the handler",
+          "[publisher][lifetime]") {
+    publisher<> pub;
+    int         calls = 0;
+    auto        sub   = pub.connect([&] { ++calls; });
 
-    sig();
+    pub();
     REQUIRE(calls == 1);
 
     sub.disconnect();
-    sig();
+    pub();
     REQUIRE(calls == 1);
     REQUIRE_FALSE(sub.connected());
 }
 
-TEST_CASE("disconnect() is idempotent", "[signal][lifetime]") {
-    signal<> sig;
-    auto     sub = sig.connect([] {});
+TEST_CASE("disconnect() is idempotent", "[publisher][lifetime]") {
+    publisher<> pub;
+    auto        sub = pub.connect([] {});
 
     REQUIRE_NOTHROW(sub.disconnect());
     REQUIRE_NOTHROW(sub.disconnect());
     REQUIRE_NOTHROW(sub.disconnect());
-    REQUIRE(sig.subscriber_count() == 0);
+    REQUIRE(pub.subscriber_count() == 0);
 }
 
-TEST_CASE("subscription safely outlives its signal", "[signal][lifetime]") {
+TEST_CASE("subscription safely outlives its publisher",
+          "[publisher][lifetime]") {
     subscription sub;
     {
-        signal<int> sig;
-        sub = sig.connect([](int) {});
+        publisher<int> pub;
+        sub = pub.connect([](int) {});
         REQUIRE(sub.connected());
     }
-    // signal is destroyed; subscription is now orphaned.
+    // publisher is destroyed; subscription is now orphaned.
     REQUIRE_FALSE(sub.connected());
     REQUIRE_NOTHROW(sub.disconnect());
 }  // sub destroyed here — its destructor must not crash
@@ -122,70 +126,71 @@ TEST_CASE("subscription safely outlives its signal", "[signal][lifetime]") {
 // 9–11: Reentrancy from inside a handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("Handler self-disconnects mid-emit", "[signal][reentrancy]") {
-    signal<> sig;
-    int      calls_a = 0;
-    int      calls_b = 0;
-    int      calls_c = 0;
+TEST_CASE("Handler self-disconnects mid-publish", "[publisher][reentrancy]") {
+    publisher<> pub;
+    int         calls_a = 0;
+    int         calls_b = 0;
+    int         calls_c = 0;
 
     subscription sub_b;
 
-    auto sub_a = sig.connect([&] { ++calls_a; });
-    sub_b      = sig.connect([&] {
+    auto sub_a = pub.connect([&] { ++calls_a; });
+    sub_b      = pub.connect([&] {
         ++calls_b;
         sub_b.disconnect();
     });
-    auto sub_c = sig.connect([&] { ++calls_c; });
+    auto sub_c = pub.connect([&] { ++calls_c; });
 
-    sig();
-    // First emit: snapshot included all three. b disconnects itself, but
+    pub();
+    // First publish: snapshot included all three. b disconnects itself, but
     // c was already in the snapshot and still fires.
     REQUIRE(calls_a == 1);
     REQUIRE(calls_b == 1);
     REQUIRE(calls_c == 1);
-    REQUIRE(sig.subscriber_count() == 2);
+    REQUIRE(pub.subscriber_count() == 2);
 
-    sig();
-    // Second emit: b is gone.
+    pub();
+    // Second publish: b is gone.
     REQUIRE(calls_a == 2);
     REQUIRE(calls_b == 1);
     REQUIRE(calls_c == 2);
 }
 
-TEST_CASE("Handler connects new handler mid-emit", "[signal][reentrancy]") {
-    signal<>     sig;
+TEST_CASE("Handler connects new handler mid-publish",
+          "[publisher][reentrancy]") {
+    publisher<>  pub;
     int          outer_calls = 0;
     int          inner_calls = 0;
     subscription inner_sub;
 
-    auto outer_sub = sig.connect([&] {
+    auto outer_sub = pub.connect([&] {
         ++outer_calls;
         if (!inner_sub.connected())
-            inner_sub = sig.connect([&] { ++inner_calls; });
+            inner_sub = pub.connect([&] { ++inner_calls; });
     });
 
-    sig();
+    pub();
     // Newly-connected inner is NOT in the in-flight snapshot.
     REQUIRE(outer_calls == 1);
     REQUIRE(inner_calls == 0);
 
-    sig();
+    pub();
     // Now inner is in the snapshot.
     REQUIRE(outer_calls == 2);
     REQUIRE(inner_calls == 1);
 }
 
-TEST_CASE("Recursive emit on the same signal does not deadlock",
-          "[signal][reentrancy]") {
-    signal<int> sig;
-    int         total_calls = 0;
+TEST_CASE("Recursive publish on the same publisher does not deadlock",
+          "[publisher][reentrancy]") {
+    publisher<int> pub;
+    int            total_calls = 0;
 
-    auto sub = sig.connect([&](int depth) {
+    auto sub = pub.connect([&](int depth) {
         ++total_calls;
-        if (depth > 0) sig(depth - 1);
+        if (depth > 0) pub(depth - 1);
     });
 
-    sig(3);
+    pub(3);
     // depth=3 → 2 → 1 → 0  (4 invocations)
     REQUIRE(total_calls == 4);
 }
@@ -194,55 +199,56 @@ TEST_CASE("Recursive emit on the same signal does not deadlock",
 // 12–16: Type-erased payloads
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("signal<>: void signature", "[signal][payload]") {
-    signal<> sig;
-    int      calls = 0;
-    auto     sub   = sig.connect([&] { ++calls; });
-    sig();
-    sig();
+TEST_CASE("publisher<>: void signature", "[publisher][payload]") {
+    publisher<> pub;
+    int         calls = 0;
+    auto        sub   = pub.connect([&] { ++calls; });
+    pub();
+    pub();
     REQUIRE(calls == 2);
 }
 
-TEST_CASE("signal<int>: primitive arg", "[signal][payload]") {
-    signal<int> sig;
-    int         received = 0;
-    auto        sub      = sig.connect([&](int x) { received = x; });
-    sig(123);
+TEST_CASE("publisher<int>: primitive arg", "[publisher][payload]") {
+    publisher<int> pub;
+    int            received = 0;
+    auto           sub      = pub.connect([&](int x) { received = x; });
+    pub(123);
     REQUIRE(received == 123);
 }
 
-TEST_CASE("signal<const std::string&>: by-const-ref arg", "[signal][payload]") {
-    signal<const std::string&> sig;
-    std::string                received;
-    const void*                seen_address = nullptr;
+TEST_CASE("publisher<const std::string&>: by-const-ref arg",
+          "[publisher][payload]") {
+    publisher<const std::string&> pub;
+    std::string                   received;
+    const void*                   seen_address = nullptr;
 
-    auto sub = sig.connect([&](const std::string& s) {
+    auto sub = pub.connect([&](const std::string& s) {
         received     = s;
         seen_address = &s;
     });
 
     std::string source = "hello";
-    sig(source);
+    pub(source);
 
     REQUIRE(received == "hello");
     REQUIRE(seen_address != nullptr);
 }
 
-TEST_CASE("signal<int, double, const std::string&>: multi-arg",
-          "[signal][payload]") {
-    signal<int, double, const std::string&> sig;
-    int                                     i = 0;
-    double                                  d = 0.0;
-    std::string                             s;
+TEST_CASE("publisher<int, double, const std::string&>: multi-arg",
+          "[publisher][payload]") {
+    publisher<int, double, const std::string&> pub;
+    int                                        i = 0;
+    double                                     d = 0.0;
+    std::string                                s;
 
-    auto sub = sig.connect(
+    auto sub = pub.connect(
         [&](int a, double b, const std::string& c) {
             i = a;
             d = b;
             s = c;
         });
 
-    sig(7, 3.14, std::string{"pi"});
+    pub(7, 3.14, std::string{"pi"});
 
     REQUIRE(i == 7);
     REQUIRE(d == 3.14);
@@ -256,12 +262,13 @@ struct payload {
 };
 }  // namespace
 
-TEST_CASE("signal<MyStruct>: user-defined type by value", "[signal][payload]") {
-    signal<payload> sig;
-    payload         received{};
+TEST_CASE("publisher<MyStruct>: user-defined type by value",
+          "[publisher][payload]") {
+    publisher<payload> pub;
+    payload            received{};
 
-    auto sub = sig.connect([&](payload p) { received = std::move(p); });
-    sig(payload{.n = 9, .label = "nine"});
+    auto sub = pub.connect([&](payload p) { received = std::move(p); });
+    pub(payload{.n = 9, .label = "nine"});
 
     REQUIRE(received.n == 9);
     REQUIRE(received.label == "nine");
@@ -271,34 +278,34 @@ TEST_CASE("signal<MyStruct>: user-defined type by value", "[signal][payload]") {
 // 17–18: Concurrency
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("Concurrent connect / emit / subscriber_count under thrash",
-          "[signal][concurrency]") {
-    signal<int>       sig;
+TEST_CASE("Concurrent connect / publish / subscriber_count under thrash",
+          "[publisher][concurrency]") {
+    publisher<int>    pub;
     std::atomic<bool> stop{false};
 
-    // Keep one always-on subscriber so emit always has work to do.
+    // Keep one always-on subscriber so publish always has work to do.
     std::atomic<int> baseline_calls{0};
-    auto baseline_sub = sig.connect([&](int) { baseline_calls.fetch_add(1); });
+    auto baseline_sub = pub.connect([&](int) { baseline_calls.fetch_add(1); });
 
     // Connector: continuously connects + drops subscriptions.
     std::thread connector([&] {
         while (!stop.load(std::memory_order_relaxed)) {
-            auto s = sig.connect([](int) {});
+            auto s = pub.connect([](int) {});
             // s drops at end of scope → auto-disconnect
         }
     });
 
-    // Emitter: continuously fires.
-    std::thread emitter([&] {
+    // Publisher thread: continuously fires.
+    std::thread publisher_thread([&] {
         int i = 0;
-        while (!stop.load(std::memory_order_relaxed)) sig(i++);
+        while (!stop.load(std::memory_order_relaxed)) pub(i++);
     });
 
     // Counter: continuously queries subscriber_count.
     std::thread counter([&] {
         std::size_t total = 0;
         while (!stop.load(std::memory_order_relaxed))
-            total += sig.subscriber_count();
+            total += pub.subscriber_count();
         REQUIRE(total >= 0);  // exists only to prevent the loop being elided
     });
 
@@ -306,24 +313,25 @@ TEST_CASE("Concurrent connect / emit / subscriber_count under thrash",
     stop.store(true, std::memory_order_relaxed);
 
     connector.join();
-    emitter.join();
+    publisher_thread.join();
     counter.join();
 
     REQUIRE(baseline_calls.load() > 0);
 }
 
-TEST_CASE("Concurrent emit() from multiple threads", "[signal][concurrency]") {
-    signal<int>      sig;
+TEST_CASE("Concurrent publish from multiple threads",
+          "[publisher][concurrency]") {
+    publisher<int>   pub;
     std::atomic<int> calls{0};
 
-    auto sub = sig.connect([&](int) { calls.fetch_add(1); });
+    auto sub = pub.connect([&](int) { calls.fetch_add(1); });
 
-    constexpr int    iterations = 5'000;
-    std::thread      a([&] {
-        for (int i = 0; i < iterations; ++i) sig(i);
+    constexpr int iterations = 5'000;
+    std::thread   a([&] {
+        for (int i = 0; i < iterations; ++i) pub(i);
     });
-    std::thread      b([&] {
-        for (int i = 0; i < iterations; ++i) sig(i);
+    std::thread   b([&] {
+        for (int i = 0; i < iterations; ++i) pub(i);
     });
 
     a.join();
@@ -337,14 +345,14 @@ TEST_CASE("Concurrent emit() from multiple threads", "[signal][concurrency]") {
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_CASE("connect() is [[nodiscard]] (signature check)",
-          "[signal][compile_time]") {
+          "[publisher][compile_time]") {
     // The [[nodiscard]] attribute itself can only be observed via compiler
     // diagnostics — there is no portable trait for it. This test pins the
     // signature so any silent change to the return type is caught, and
     // documents the contract: discarding connect()'s return value MUST
     // produce a compiler diagnostic.
-    signal<int> sig;
-    using ReturnT = decltype(sig.connect([](int) {}));
+    publisher<int> pub;
+    using ReturnT = decltype(pub.connect([](int) {}));
     STATIC_REQUIRE(std::is_same_v<ReturnT, subscription>);
 
     // Sanity: subscription is move-only.
@@ -353,9 +361,9 @@ TEST_CASE("connect() is [[nodiscard]] (signature check)",
     STATIC_REQUIRE_FALSE(std::is_copy_constructible_v<subscription>);
     STATIC_REQUIRE_FALSE(std::is_copy_assignable_v<subscription>);
 
-    // signal is pinned (neither copyable nor movable).
-    STATIC_REQUIRE_FALSE(std::is_copy_constructible_v<signal<int>>);
-    STATIC_REQUIRE_FALSE(std::is_copy_assignable_v<signal<int>>);
-    STATIC_REQUIRE_FALSE(std::is_move_constructible_v<signal<int>>);
-    STATIC_REQUIRE_FALSE(std::is_move_assignable_v<signal<int>>);
+    // publisher is pinned (neither copyable nor movable).
+    STATIC_REQUIRE_FALSE(std::is_copy_constructible_v<publisher<int>>);
+    STATIC_REQUIRE_FALSE(std::is_copy_assignable_v<publisher<int>>);
+    STATIC_REQUIRE_FALSE(std::is_move_constructible_v<publisher<int>>);
+    STATIC_REQUIRE_FALSE(std::is_move_assignable_v<publisher<int>>);
 }
