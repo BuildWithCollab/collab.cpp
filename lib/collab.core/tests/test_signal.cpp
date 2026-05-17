@@ -10,8 +10,7 @@
 
 import collab.core;
 
-using collab::core::signal;
-using collab::core::subscription;
+using namespace collab::core;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1–4: Basic connect / emit / disconnect
