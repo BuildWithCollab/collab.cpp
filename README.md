@@ -1,28 +1,20 @@
 # collab-core 🏴‍☠️
 
-Foundational C++23 library for the **Collab** stack. Provides semantic versioning, structured logging, terminal styling, and a thread-safe signal/slot primitive.
+Foundational C++23 library for the **Collab** stack. Provides identity and manifest types for libraries, semantic versioning, structured logging with per-library attribution, a thread-safe signal/slot primitive, and ANSI terminal styling.
 
 Requires a C++23 toolchain with module support.
-
-```cpp
-import collab.core;
-
-int main() {
-    collab::log::add_sink(collab::log::make_stdout_color_sink());
-    collab::log::info("collab.core {}", collab::core::version.to_string());
-}
-```
 
 ---
 
 ## Table of contents
 
 - [Getting started](#getting-started)
+- [Library conventions](#library-conventions)
+- [Identity and manifest](#identity-and-manifest)
 - [Semantic versioning](#semantic-versioning)
-- [Project manifest](#project-manifest)
 - [Logging](#logging)
-- [Terminal styling](#terminal-styling)
 - [Signals](#signals)
+- [Terminal styling](#terminal-styling)
 - [License](#license)
 
 ---
@@ -35,11 +27,83 @@ One import brings in everything:
 import collab.core;
 ```
 
-The library's own version is exposed as a `semver` constant:
+---
+
+## Library conventions
+
+A library built on `collab.core` is expected to expose four names from its top-level namespace: **`manifest`**, **`identity`**, **`version`**, and **`log`**. Declare them once at the library's root — usually in a single partition or header — and reuse them everywhere:
 
 ```cpp
-collab::core::version  // semver{1, 0, 0}
+namespace collab::net {
+    inline const collab::core::manifest manifest{
+        .identity = {
+            .app_id   = "collab-net",
+            .app_name = "Collab Net",
+            .org_id   = "mrowrpurr",
+            .org_name = "Mrowr Purr",
+            .tld      = "com",
+        },
+        .version     = {0, 1, 0},
+        .description = "Networking layer.",
+        .authors     = {"Mrowr Purr"},
+        .license     = "0BSD",
+    };
+
+    inline const auto& identity = manifest.identity;
+    inline const auto& version  = manifest.version;
+
+    using log = collab::log::logger<identity>;
+}
 ```
+
+Two references and a using-alias — the `identity` and `version` views never drift from the manifest, and the logger is bound to this library's identity at compile time (no per-call objects, no implicit context).
+
+Now any code in the library can just log:
+
+```cpp
+namespace collab::net {
+    void connect(std::string_view host, int port) {
+        log::info("connecting to {}:{}", host, port);
+        log::warn("retry attempt {}", n);
+    }
+}
+```
+
+Sinks installed by the app see the identity and decide how to render it — console sinks prefix with `[Collab Net]` (display name), file sinks prefix with `[com.mrowrpurr.collab-net]` (bundle ID, for grep). Libraries don't deal with sinks; they just log.
+
+### Log levels
+
+| Level      | Use for                                                              | Example                                       |
+| ---------- | -------------------------------------------------------------------- | --------------------------------------------- |
+| `trace`    | Step-by-step internals you'd only want when debugging in detail.     | `log::trace("entering parse_header()");`      |
+| `debug`    | Verbose detail useful while diagnosing a specific problem.           | `log::debug("payload bytes: {}", hex);`       |
+| `info`     | Normal-operation milestones a healthy system emits.                  | `log::info("listening on :{}", port);`        |
+| `warn`     | Something unexpected — but the system is recovering or continuing.   | `log::warn("retry {}/{}", n, max);`           |
+| `error`    | A specific operation failed; the system as a whole may still be ok.  | `log::error("connect failed: {}", err);`      |
+| `critical` | System integrity at risk; immediate human attention.                 | `log::critical("disk full — aborting");`      |
+
+---
+
+## Identity and manifest
+
+`collab::core::identity` carries the bits a library uses to derive paths, bundle IDs, and folder names — app slug + display name, org slug + display name, and the reverse-DNS root segment. `manifest` composes an identity with descriptive metadata: version, description, authors, license.
+
+A library that hasn't grown descriptive metadata yet can declare just an identity:
+
+```cpp
+collab::core::identity ident{
+    .app_id   = "collab-core",
+    .app_name = "Collab Core",
+    .org_id   = "mrowrpurr",
+    .org_name = "Mrowr Purr",
+    .tld      = "com",
+};
+assert(ident.bundle_id() == "com.mrowrpurr.collab-core");
+```
+
+`identity::bundle_id()` produces the reverse-DNS form `tld.org_id.app_id`.
+
+A `manifest` adds version, description, authors, and license on top — see the example in [Library conventions](#library-conventions). `description` and `license` are `std::optional<std::string>`; absence is distinct from an explicitly empty value. `authors` is a plain `std::vector<std::string>` because an empty vector already means "zero authors" with no ambiguity.
 
 ---
 
@@ -55,56 +119,9 @@ assert(v.to_string() == "1.2.0-rc.1");
 
 ---
 
-## Project manifest
-
-`collab::core::identity` and `collab::core::manifest` describe a project's identity and its descriptive metadata. `identity` carries the bits used to derive paths and bundle IDs — app slug + display name, org slug + display name, and the reverse-DNS root segment. `manifest` composes `identity` with version, description, authors, and license.
-
-`identity` on its own is enough when you only need the path-deriving bits (config folder resolution, for instance):
-
-```cpp
-collab::core::identity ident{
-    .app_id   = "collab-core",
-    .app_name = "Collab Core",
-    .org_id   = "mrowrpurr",
-    .org_name = "Mrowr Purr",
-    .tld      = "com",
-};
-assert(ident.bundle_id() == "com.mrowrpurr.collab-core");
-```
-
-`identity::bundle_id()` produces the reverse-DNS form `tld.org_id.app_id`.
-
-Reach for `manifest` when you also want descriptive metadata:
-
-```cpp
-collab::core::manifest m{
-    .identity    = ident,
-    .version     = {1, 0, 0},
-    .description = "Foundational C++23 library.",
-    .authors     = {"Mrowr Purr"},
-    .license     = "0BSD",
-};
-```
-
-`description` and `license` are `std::optional<std::string>` — absence is distinct from an explicitly empty value. `authors` is a plain `std::vector<std::string>` because an empty vector already means "zero authors" with no ambiguity.
-
----
-
 ## Logging
 
-Library code just calls `collab::log::info(...)` (or `warn`, `error`, etc.) and gets on with its day — no sinks, no setup, no plumbing. The app or binary at the top of the stack installs sinks once at startup; everything underneath stays oblivious to where output ends up. With no sinks installed, messages are silently dropped. Level filtering happens *before* `fmt::format` runs, so filtered messages don't pay formatting cost. The default level is `info`.
-
-**Library code — log freely:**
-
-```cpp
-import collab.core;
-
-void connect(std::string_view host, int port) {
-    collab::log::info("connecting to {}:{}", host, port);
-    // ...
-    collab::log::warn("retry attempt {} after {}ms", n, elapsed.count());
-}
-```
+Library code never deals with sinks — it just calls `log::info(...)` (see [Library conventions](#library-conventions)). The **application** at the top of the stack is responsible for installing sinks, choosing the level, and deciding where output ends up.
 
 **App code — install sinks at startup:**
 
@@ -117,74 +134,13 @@ int main() {
 }
 ```
 
-**Per-library attribution:**
+With no sinks installed, messages are silently dropped. Level filtering happens *before* `fmt::format` runs, so filtered messages don't pay formatting cost. The default level is `info`.
 
-A library can bind a logger to its identity once and call `log::info(...)` everywhere — no per-call objects, no implicit context:
+Built-in sinks cover stdout/stderr (plain or colored) and files. For anything else, subclass `collab::log::sink` (override `write(level, const collab::core::identity*, std::string_view)`) and pass `std::make_unique<my_sink>(...)` to `add_sink`. Sinks receive a pointer to the caller's identity (or `nullptr` for untagged calls), so a custom sink can render attribution, filter by library, or route certain libraries to specific destinations.
 
-```cpp
-namespace collab::net {
-    inline const collab::core::manifest manifest{
-        .identity = {
-            .app_id   = "collab-net",
-            .app_name = "Collab Net",
-            .org_id   = "mrowrpurr",
-            .org_name = "Mrowr Purr",
-            .tld      = "com",
-        },
-        .version = {0, 1, 0},
-    };
-    inline const auto& identity = manifest.identity;
-    using log = collab::log::logger<identity>;
-}
-
-void connect() {
-    collab::net::log::info("connecting to {}", host);
-}
-```
-
-Sinks see the identity and decide how to render it: console sinks prefix with `[Collab Net]` (display name), file sinks prefix with `[com.mrowrpurr.collab-net]` (bundle ID for grepping). Untagged `collab::log::info(...)` calls still work — they pass no identity and sinks emit the bare message. Sinks can also filter or route by identity.
-
-Built-in sinks cover stdout/stderr (plain or colored) and files. For anything else, subclass `collab::log::sink` (override `write(level, const collab::core::identity*, std::string_view)`) and pass a `std::make_unique<my_sink>(...)` to `add_sink`.
+If you need to log from outside a library — a script, a one-off binary, a test — the untagged free functions `collab::log::info(...)`, `warn(...)`, etc. still work. They pass no identity, and sinks emit the bare message.
 
 See [`docs/logging.md`](docs/logging.md) for additional notes.
-
----
-
-## Terminal styling
-
-Streaming manipulators for ANSI colors and styles. Output is automatically suppressed when stdout/stderr is not a TTY, when `NO_COLOR` is set, or when piped.
-
-### Enums
-
-```cpp
-enum class collab::term::color {
-    black, red, green, yellow, blue, magenta, cyan, gray, reset
-};
-
-enum class collab::term::style {
-    bold, dim, italic, underline, blink, reversed, crossed, reset
-};
-
-std::ostream& operator<<(std::ostream&, color);
-std::ostream& operator<<(std::ostream&, style);
-```
-
-### Convenience constants (for `using namespace collab::term;`)
-
-```cpp
-namespace collab::term::fg {
-    black, red, green, yellow, blue, magenta, cyan, gray
-}
-
-reset_color, reset_style
-bold, dim, italic, underline, blink, reversed, crossed
-```
-
-```cpp
-using namespace collab::term;
-std::cout << bold << fg::green << "ok " << reset_style << reset_color
-          << "build complete\n";
-```
 
 ---
 
@@ -223,6 +179,20 @@ Convention (not enforced): only the owning class invokes the signal — same rul
 ⚠️ **Qt thread affinity.** If a worker thread invokes the signal and a handler touches a `QObject` / `QWidget`, you'll trip Qt's thread-affinity rules (assertion, crash, or scrambled UI). The `signal` does no marshalling. If you need GUI-thread dispatch, do it inside the handler — e.g. `QMetaObject::invokeMethod(target, fn, Qt::QueuedConnection)`.
 
 ⚠️ **Move-only argument types are not supported.** `signal<std::unique_ptr<T>>` and similar will not compile. Multi-broadcast requires passing each handler its own copy of the arguments, which move-only types can't satisfy. Pass by `const T&` or `std::shared_ptr<T>` instead.
+
+---
+
+## Terminal styling
+
+Streaming manipulators for ANSI colors and styles. Output is automatically suppressed when stdout/stderr is not a TTY, when `NO_COLOR` is set, or when piped.
+
+```cpp
+using namespace collab::term;
+std::cout << bold << fg::green << "ok " << reset_style << reset_color
+          << "build complete\n";
+```
+
+Colors: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`. Styles: `bold`, `dim`, `italic`, `underline`, `blink`, `reversed`, `crossed`. Use `reset_color` / `reset_style` to clear. Foreground constants live under `collab::term::fg`.
 
 ---
 
