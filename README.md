@@ -19,6 +19,7 @@ int main() {
 
 - [Getting started](#getting-started)
 - [Semantic versioning](#semantic-versioning)
+- [Project manifest](#project-manifest)
 - [Logging](#logging)
 - [Terminal styling](#terminal-styling)
 - [Signals](#signals)
@@ -53,6 +54,35 @@ collab::core::semver v{1, 2, 0, "rc.1"};
 assert(v < collab::core::semver{1, 2, 0});         // rc.1 precedes the release
 assert(v.to_string() == "1.2.0-rc.1");
 ```
+
+---
+
+## Project manifest
+
+`collab::core::identity` and `collab::core::manifest` describe a project's identity and its descriptive metadata. `identity` carries the bits used to derive paths and bundle IDs — app slug + display name, org slug + display name, and the reverse-DNS root segment. `manifest` composes `identity` with version, description, authors, and license.
+
+Use `identity` on its own when you only need the path-deriving bits (config folder resolution, for instance). Reach for `manifest` when you also want descriptive metadata.
+
+`identity::bundle_id()` produces the reverse-DNS form `tld.org_id.app_id`.
+
+```cpp
+collab::core::manifest m{
+    .identity = {
+        .app_id   = "collab-core",
+        .app_name = "Collab Core",
+        .org_id   = "mrowrpurr",
+        .org_name = "Mrowr Purr",
+        .tld      = "com",
+    },
+    .version     = {1, 0, 0},
+    .description = "Foundational C++23 library.",
+    .authors     = {"Mrowr Purr"},
+    .license     = "0BSD",
+};
+assert(m.identity.bundle_id() == "com.mrowrpurr.collab-core");
+```
+
+`description` and `license` are `std::optional<std::string>` — absence is distinct from an explicitly empty value. `authors` is a plain `std::vector<std::string>` because an empty vector already means "zero authors" with no ambiguity.
 
 ---
 

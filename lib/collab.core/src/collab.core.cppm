@@ -1,6 +1,7 @@
 export module collab.core;
 
 export import :semver;
+export import :manifest;
 export import :log;
 export import :term;
 export import :signal;
