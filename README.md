@@ -172,7 +172,9 @@ std::cout << bold << fg::green << "ok " << reset_style << reset_color
 
 ## Signals
 
-Multi-subscriber, thread-safe signal. Subscriptions are RAII tokens that auto-disconnect on destruction. Convention (not enforced): only the owning class calls `emit()` — same rule as Qt, Boost.Signals2, sigc++.
+Multi-subscriber, thread-safe signal. Subscriptions are RAII tokens that auto-disconnect on destruction. Convention (not enforced): only the owning class invokes the signal — same rule as Qt, Boost.Signals2, sigc++.
+
+Emission is `operator()`, not a member named `emit`. Qt defines `emit` as an empty preprocessor macro (`qtmetamacros.h`), so a member function called `emit` would silently break for any consumer that also pulls in a Qt header. Call syntax sidesteps the collision entirely — `sig(args)` works whether Qt is present or not.
 
 ### `Signal<Args...>`
 
@@ -189,7 +191,7 @@ public:
     Signal& operator=(Signal&&)      = delete;
 
     [[nodiscard]] Subscription connect(Handler handler);
-    void                       emit(Args... args);
+    void                       operator()(Args... args);
     std::size_t                subscriber_count() const;
 };
 ```
@@ -213,14 +215,14 @@ public:
 
 ### Threading contract
 
-- `connect()`, `emit()`, `disconnect()`, and `subscriber_count()` are all safe to call concurrently from any thread on the same `Signal`.
-- Handlers run *outside* the signal's lock. Reentrant and recursive `emit()` are deadlock-free — a handler may freely `connect()`, `disconnect()`, or `emit()` (including on the same `Signal`).
-- Disconnects during an in-flight `emit()` affect *subsequent* emits, not the current one.
+- `connect()`, `operator()`, `disconnect()`, and `subscriber_count()` are all safe to call concurrently from any thread on the same `Signal`.
+- Handlers run *outside* the signal's lock. Reentrant and recursive emission is deadlock-free — a handler may freely `connect()`, `disconnect()`, or re-invoke the signal (including the same `Signal`).
+- Disconnects during an in-flight emission affect *subsequent* emissions, not the current one.
 - A `Subscription` may safely outlive its `Signal`. Disconnect becomes a no-op.
 
 ### Caveats
 
-⚠️ **Handlers run on the emitting thread.** "Thread-safe `Signal`" means the *signal* object is safe under concurrent use — it does **not** mean your handlers are. If two threads call `emit()` simultaneously, the same handler may run on both threads at the same time. Handlers that touch shared state must synchronize themselves.
+⚠️ **Handlers run on the emitting thread.** "Thread-safe `Signal`" means the *signal* object is safe under concurrent use — it does **not** mean your handlers are. If two threads invoke the signal simultaneously, the same handler may run on both threads at the same time. Handlers that touch shared state must synchronize themselves.
 
 ⚠️ **Qt thread affinity.** If a worker thread emits and a handler touches a `QObject` / `QWidget`, you'll trip Qt's thread-affinity rules (assertion, crash, or scrambled UI). The `Signal` does no marshalling. If you need GUI-thread dispatch, do it inside the handler — e.g. `QMetaObject::invokeMethod(target, fn, Qt::QueuedConnection)`.
 
@@ -235,7 +237,7 @@ auto sub = changed.connect([](int code, std::string_view msg) {
     collab::log::info("changed: {} ({})", msg, code);
 });
 
-changed.emit(42, "ready");
+changed(42, "ready");
 
 // Disconnect explicitly, or just let `sub` go out of scope.
 sub.disconnect();

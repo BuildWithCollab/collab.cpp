@@ -22,7 +22,7 @@ TEST_CASE("Signal<int>: single subscriber receives an emit", "[signal][basic]") 
     int         received = 0;
     auto        sub      = sig.connect([&](int x) { received = x; });
 
-    sig.emit(42);
+    sig(42);
 
     REQUIRE(received == 42);
 }
@@ -36,14 +36,14 @@ TEST_CASE("Signal<>: multiple subscribers all fire in connection order",
     auto s2 = sig.connect([&] { order.push_back(2); });
     auto s3 = sig.connect([&] { order.push_back(3); });
 
-    sig.emit();
+    sig();
 
     REQUIRE(order == std::vector<int>{1, 2, 3});
 }
 
 TEST_CASE("Signal<>: emit with zero subscribers is a no-op", "[signal][basic]") {
     Signal<int> sig;
-    REQUIRE_NOTHROW(sig.emit(7));
+    REQUIRE_NOTHROW(sig(7));
     REQUIRE(sig.subscriber_count() == 0);
 }
 
@@ -75,10 +75,10 @@ TEST_CASE("Subscription destructor disconnects", "[signal][lifetime]") {
     int      calls = 0;
     {
         auto sub = sig.connect([&] { ++calls; });
-        sig.emit();
+        sig();
         REQUIRE(calls == 1);
     }
-    sig.emit();
+    sig();
     REQUIRE(calls == 1);
     REQUIRE(sig.subscriber_count() == 0);
 }
@@ -88,11 +88,11 @@ TEST_CASE("Explicit disconnect() removes the handler", "[signal][lifetime]") {
     int      calls = 0;
     auto     sub   = sig.connect([&] { ++calls; });
 
-    sig.emit();
+    sig();
     REQUIRE(calls == 1);
 
     sub.disconnect();
-    sig.emit();
+    sig();
     REQUIRE(calls == 1);
     REQUIRE_FALSE(sub.connected());
 }
@@ -138,7 +138,7 @@ TEST_CASE("Handler self-disconnects mid-emit", "[signal][reentrancy]") {
     });
     auto sub_c = sig.connect([&] { ++calls_c; });
 
-    sig.emit();
+    sig();
     // First emit: snapshot included all three. b disconnects itself, but
     // c was already in the snapshot and still fires.
     REQUIRE(calls_a == 1);
@@ -146,7 +146,7 @@ TEST_CASE("Handler self-disconnects mid-emit", "[signal][reentrancy]") {
     REQUIRE(calls_c == 1);
     REQUIRE(sig.subscriber_count() == 2);
 
-    sig.emit();
+    sig();
     // Second emit: b is gone.
     REQUIRE(calls_a == 2);
     REQUIRE(calls_b == 1);
@@ -165,12 +165,12 @@ TEST_CASE("Handler connects new handler mid-emit", "[signal][reentrancy]") {
             inner_sub = sig.connect([&] { ++inner_calls; });
     });
 
-    sig.emit();
+    sig();
     // Newly-connected inner is NOT in the in-flight snapshot.
     REQUIRE(outer_calls == 1);
     REQUIRE(inner_calls == 0);
 
-    sig.emit();
+    sig();
     // Now inner is in the snapshot.
     REQUIRE(outer_calls == 2);
     REQUIRE(inner_calls == 1);
@@ -183,10 +183,10 @@ TEST_CASE("Recursive emit on the same signal does not deadlock",
 
     auto sub = sig.connect([&](int depth) {
         ++total_calls;
-        if (depth > 0) sig.emit(depth - 1);
+        if (depth > 0) sig(depth - 1);
     });
 
-    sig.emit(3);
+    sig(3);
     // depth=3 → 2 → 1 → 0  (4 invocations)
     REQUIRE(total_calls == 4);
 }
@@ -199,8 +199,8 @@ TEST_CASE("Signal<>: void signature", "[signal][payload]") {
     Signal<> sig;
     int      calls = 0;
     auto     sub   = sig.connect([&] { ++calls; });
-    sig.emit();
-    sig.emit();
+    sig();
+    sig();
     REQUIRE(calls == 2);
 }
 
@@ -208,7 +208,7 @@ TEST_CASE("Signal<int>: primitive arg", "[signal][payload]") {
     Signal<int> sig;
     int         received = 0;
     auto        sub      = sig.connect([&](int x) { received = x; });
-    sig.emit(123);
+    sig(123);
     REQUIRE(received == 123);
 }
 
@@ -223,7 +223,7 @@ TEST_CASE("Signal<const std::string&>: by-const-ref arg", "[signal][payload]") {
     });
 
     std::string source = "hello";
-    sig.emit(source);
+    sig(source);
 
     REQUIRE(received == "hello");
     REQUIRE(seen_address != nullptr);
@@ -243,7 +243,7 @@ TEST_CASE("Signal<int, double, const std::string&>: multi-arg",
             s = c;
         });
 
-    sig.emit(7, 3.14, std::string{"pi"});
+    sig(7, 3.14, std::string{"pi"});
 
     REQUIRE(i == 7);
     REQUIRE(d == 3.14);
@@ -262,7 +262,7 @@ TEST_CASE("Signal<MyStruct>: user-defined type by value", "[signal][payload]") {
     payload         received{};
 
     auto sub = sig.connect([&](payload p) { received = std::move(p); });
-    sig.emit(payload{.n = 9, .label = "nine"});
+    sig(payload{.n = 9, .label = "nine"});
 
     REQUIRE(received.n == 9);
     REQUIRE(received.label == "nine");
@@ -292,7 +292,7 @@ TEST_CASE("Concurrent connect / emit / subscriber_count under thrash",
     // Emitter: continuously fires.
     std::thread emitter([&] {
         int i = 0;
-        while (!stop.load(std::memory_order_relaxed)) sig.emit(i++);
+        while (!stop.load(std::memory_order_relaxed)) sig(i++);
     });
 
     // Counter: continuously queries subscriber_count.
@@ -321,10 +321,10 @@ TEST_CASE("Concurrent emit() from multiple threads", "[signal][concurrency]") {
 
     constexpr int    iterations = 5'000;
     std::thread      a([&] {
-        for (int i = 0; i < iterations; ++i) sig.emit(i);
+        for (int i = 0; i < iterations; ++i) sig(i);
     });
     std::thread      b([&] {
-        for (int i = 0; i < iterations; ++i) sig.emit(i);
+        for (int i = 0; i < iterations; ++i) sig(i);
     });
 
     a.join();

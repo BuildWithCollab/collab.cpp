@@ -14,24 +14,29 @@ export module collab.core:signal;
 // ─────────────────────────────────────────────────────────────────────────────
 // 📡 collab::core::Signal — multi-subscriber, thread-safe signal/slot.
 //
+// Emission is `operator()`, not `emit()`. Qt's qtmetamacros.h defines `emit`
+// as an empty preprocessor macro, which silently mangles any `sig.emit(args)`
+// call in a TU that also includes a Qt header. Using call syntax sidesteps
+// that collision entirely — `sig(args)` reads naturally and survives Qt.
+//
 // Threading contract
 // ──────────────────
-//   • connect(), emit(), disconnect(), and subscriber_count() are all safe
-//     to call concurrently from any thread on the same Signal.
-//   • emit() does not hold the internal lock while invoking handlers. It
+//   • connect(), operator(), disconnect(), and subscriber_count() are all
+//     safe to call concurrently from any thread on the same Signal.
+//   • operator() does not hold the internal lock while invoking handlers. It
 //     snapshots the slot list under a shared lock, releases the lock, then
-//     iterates. Reentrancy and recursive emit are deadlock-free.
-//   • A handler invoked from emit() may freely call connect(), disconnect(),
-//     or emit() (including on the same Signal).
-//   • Disconnect during an in-flight emit affects subsequent emits, not the
-//     current one. Handlers already captured in the current snapshot still
-//     fire — their slots are kept alive by the snapshot's shared_ptrs.
+//     iterates. Reentrancy and recursive emission are deadlock-free.
+//   • A handler invoked from operator() may freely call connect(),
+//     disconnect(), or operator() (including on the same Signal).
+//   • Disconnect during an in-flight emission affects subsequent emissions,
+//     not the current one. Handlers already captured in the current snapshot
+//     still fire — their slots are kept alive by the snapshot's shared_ptrs.
 //   • A Subscription may safely outlive its Signal. Disconnect becomes a
 //     no-op once the Signal is destroyed. No use-after-free is possible.
 //
 // Convention
 // ──────────
-//   Only the class that owns the Signal calls emit(). The type system does
+//   Only the class that owns the Signal invokes it. The type system does
 //   not enforce this — code review and discipline do. Same convention as
 //   Qt 5+, Boost.Signals2, sigc++.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,9 +159,9 @@ public:
             }};
     }
 
-    void emit(Args... args) {
+    void operator()(Args... args) {
         // Local strong ref keeps the control block alive if `*this` is
-        // destroyed on another thread mid-emit. Without it, the lock and
+        // destroyed on another thread mid-emission. Without it, the lock and
         // snapshot lines below would access a freed control block.
         auto ctrl = control_;
         std::vector<std::shared_ptr<detail::slot_base>> snapshot;
