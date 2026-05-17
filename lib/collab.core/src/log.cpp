@@ -16,6 +16,7 @@ module;
 module collab.core;
 
 import :log;
+import :manifest;
 
 namespace collab::log {
 
@@ -59,6 +60,18 @@ namespace {
         s.logger_names.push_back(name);
     }
 
+    // Console sinks render identity using the display name — humans reading
+    // a terminal want "[Collab Net]" not "[com.mrowrpurr.collab-net]".
+    void emit_console(spdlog::logger& logger,
+                      level lvl,
+                      const collab::core::identity* id,
+                      std::string_view msg) {
+        if (id)
+            logger.log(to_spdlog_level(lvl), "[{}] {}", id->app_name, msg);
+        else
+            logger.log(to_spdlog_level(lvl), "{}", msg);
+    }
+
     // ── spdlog-backed stdout sinks ──────────────────────────────────
 
     class stdout_sink final : public sink {
@@ -69,8 +82,8 @@ namespace {
             register_logger(logger_, name);
         }
 
-        void write(level lvl, std::string_view msg) override {
-            logger_->log(to_spdlog_level(lvl), "{}", msg);
+        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+            emit_console(*logger_, lvl, id, msg);
         }
 
     private:
@@ -86,8 +99,8 @@ namespace {
             register_logger(logger_, name);
         }
 
-        void write(level lvl, std::string_view msg) override {
-            logger_->log(to_spdlog_level(lvl), "{}", msg);
+        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+            emit_console(*logger_, lvl, id, msg);
         }
 
     private:
@@ -105,8 +118,8 @@ namespace {
             register_logger(logger_, name);
         }
 
-        void write(level lvl, std::string_view msg) override {
-            logger_->log(to_spdlog_level(lvl), "{}", msg);
+        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+            emit_console(*logger_, lvl, id, msg);
         }
 
     private:
@@ -122,8 +135,8 @@ namespace {
             register_logger(logger_, name);
         }
 
-        void write(level lvl, std::string_view msg) override {
-            logger_->log(to_spdlog_level(lvl), "{}", msg);
+        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+            emit_console(*logger_, lvl, id, msg);
         }
 
     private:
@@ -132,6 +145,9 @@ namespace {
     };
 
     // ── spdlog-backed file sink ─────────────────────────────────────
+    //
+    // File sinks render identity using the bundle ID — "[com.mrowrpurr.collab-net]"
+    // is what you want for grepping log files long after the fact.
 
     class file_sink final : public sink {
     public:
@@ -142,8 +158,11 @@ namespace {
             logger_->flush_on(spdlog::level::trace);
         }
 
-        void write(level lvl, std::string_view msg) override {
-            logger_->log(to_spdlog_level(lvl), "{}", msg);
+        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+            if (id)
+                logger_->log(to_spdlog_level(lvl), "[{}] {}", id->bundle_id(), msg);
+            else
+                logger_->log(to_spdlog_level(lvl), "{}", msg);
         }
 
     private:
@@ -180,20 +199,41 @@ void clear_sinks() {
     s.logger_names.clear();
 }
 
-void log_message(level lvl, std::string_view msg) {
+void log_message(level lvl, const collab::core::identity* id, std::string_view msg) {
     auto& s = state();
     std::lock_guard lock(s.mtx);
     if (lvl < s.current_level) return;
     for (auto& snk : s.sinks)
-        snk->write(lvl, msg);
+        snk->write(lvl, id, msg);
 }
 
-void trace(std::string_view msg)    { log_message(level::trace, msg); }
-void debug(std::string_view msg)    { log_message(level::debug, msg); }
-void info(std::string_view msg)     { log_message(level::info, msg); }
-void warn(std::string_view msg)     { log_message(level::warn, msg); }
-void error(std::string_view msg)    { log_message(level::error, msg); }
-void critical(std::string_view msg) { log_message(level::critical, msg); }
+// Untagged: pass nullptr.
+void trace(std::string_view msg)    { log_message(level::trace,    nullptr, msg); }
+void debug(std::string_view msg)    { log_message(level::debug,    nullptr, msg); }
+void info(std::string_view msg)     { log_message(level::info,     nullptr, msg); }
+void warn(std::string_view msg)     { log_message(level::warn,     nullptr, msg); }
+void error(std::string_view msg)    { log_message(level::error,    nullptr, msg); }
+void critical(std::string_view msg) { log_message(level::critical, nullptr, msg); }
+
+// Tagged: pass identity through.
+void trace_with(const collab::core::identity& id, std::string_view msg) {
+    log_message(level::trace, &id, msg);
+}
+void debug_with(const collab::core::identity& id, std::string_view msg) {
+    log_message(level::debug, &id, msg);
+}
+void info_with(const collab::core::identity& id, std::string_view msg) {
+    log_message(level::info, &id, msg);
+}
+void warn_with(const collab::core::identity& id, std::string_view msg) {
+    log_message(level::warn, &id, msg);
+}
+void error_with(const collab::core::identity& id, std::string_view msg) {
+    log_message(level::error, &id, msg);
+}
+void critical_with(const collab::core::identity& id, std::string_view msg) {
+    log_message(level::critical, &id, msg);
+}
 
 std::unique_ptr<sink> make_stdout_sink() {
     return std::make_unique<stdout_sink>();

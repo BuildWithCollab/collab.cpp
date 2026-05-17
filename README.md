@@ -117,7 +117,34 @@ int main() {
 }
 ```
 
-Built-in sinks cover stdout/stderr (plain or colored) and files. For anything else, subclass `collab::log::sink` (override `write(level, std::string_view)`) and pass a `std::make_unique<my_sink>(...)` to `add_sink`.
+**Per-library attribution:**
+
+A library can bind a logger to its identity once and call `log::info(...)` everywhere — no per-call objects, no implicit context:
+
+```cpp
+namespace collab::net {
+    inline const collab::core::manifest manifest{
+        .identity = {
+            .app_id   = "collab-net",
+            .app_name = "Collab Net",
+            .org_id   = "mrowrpurr",
+            .org_name = "Mrowr Purr",
+            .tld      = "com",
+        },
+        .version = {0, 1, 0},
+    };
+    inline const auto& identity = manifest.identity;
+    using log = collab::log::logger<identity>;
+}
+
+void connect() {
+    collab::net::log::info("connecting to {}", host);
+}
+```
+
+Sinks see the identity and decide how to render it: console sinks prefix with `[Collab Net]` (display name), file sinks prefix with `[com.mrowrpurr.collab-net]` (bundle ID for grepping). Untagged `collab::log::info(...)` calls still work — they pass no identity and sinks emit the bare message. Sinks can also filter or route by identity.
+
+Built-in sinks cover stdout/stderr (plain or colored) and files. For anything else, subclass `collab::log::sink` (override `write(level, const collab::core::identity*, std::string_view)`) and pass a `std::make_unique<my_sink>(...)` to `add_sink`.
 
 See [`docs/logging.md`](docs/logging.md) for additional notes.
 

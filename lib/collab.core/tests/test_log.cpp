@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,12 +19,17 @@ using namespace collab::log;
 class capture_sink final : public sink {
 public:
     struct entry {
-        level       lvl;
-        std::string msg;
+        level                                lvl;
+        std::optional<collab::core::identity> id;
+        std::string                          msg;
     };
 
-    void write(level lvl, std::string_view msg) override {
-        entries.push_back({lvl, std::string(msg)});
+    void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+        entries.push_back({
+            lvl,
+            id ? std::optional{*id} : std::nullopt,
+            std::string(msg),
+        });
     }
 
     std::vector<entry> entries;
@@ -306,4 +312,115 @@ TEST_CASE("multiple sinks receive the same message", "[log]") {
     REQUIRE(cap2->entries.size() == 1);
     CHECK(cap1->entries[0].msg == "broadcast");
     CHECK(cap2->entries[0].msg == "broadcast");
+}
+
+// ── Tagged logging ──────────────────────────────────────────────────
+
+namespace {
+    inline const collab::core::identity test_identity_a{
+        .app_id   = "lib-a",
+        .app_name = "Lib A",
+        .org_id   = "purr",
+        .org_name = "Purr",
+        .tld      = "com",
+    };
+
+    inline const collab::core::identity test_identity_b{
+        .app_id   = "lib-b",
+        .app_name = "Lib B",
+        .org_id   = "purr",
+        .org_name = "Purr",
+        .tld      = "com",
+    };
+
+    using log_a = collab::log::logger<test_identity_a>;
+    using log_b = collab::log::logger<test_identity_b>;
+}
+
+TEST_CASE("untagged log entries arrive with no identity", "[log][identity]") {
+    log_fixture fix;
+    auto* cap = make_capture();
+
+    info("plain");
+
+    REQUIRE(cap->entries.size() == 1);
+    CHECK_FALSE(cap->entries[0].id.has_value());
+    CHECK(cap->entries[0].msg == "plain");
+}
+
+TEST_CASE("info_with carries identity through to the sink", "[log][identity]") {
+    log_fixture fix;
+    auto* cap = make_capture();
+
+    info_with(test_identity_a, "tagged plain");
+    info_with(test_identity_a, "tagged fmt {}", 42);
+
+    REQUIRE(cap->entries.size() == 2);
+
+    REQUIRE(cap->entries[0].id.has_value());
+    CHECK(cap->entries[0].id->app_id == "lib-a");
+    CHECK(cap->entries[0].msg == "tagged plain");
+
+    REQUIRE(cap->entries[1].id.has_value());
+    CHECK(cap->entries[1].id->app_id == "lib-a");
+    CHECK(cap->entries[1].msg == "tagged fmt 42");
+}
+
+TEST_CASE("logger<I> dispatches with the bound identity", "[log][identity][logger]") {
+    log_fixture fix;
+    auto* cap = make_capture();
+
+    log_a::info("hello from a");
+    log_a::warn("warning {} from a", 1);
+
+    REQUIRE(cap->entries.size() == 2);
+
+    REQUIRE(cap->entries[0].id.has_value());
+    CHECK(cap->entries[0].id->app_id == "lib-a");
+    CHECK(cap->entries[0].lvl == level::info);
+    CHECK(cap->entries[0].msg == "hello from a");
+
+    REQUIRE(cap->entries[1].id.has_value());
+    CHECK(cap->entries[1].id->app_id == "lib-a");
+    CHECK(cap->entries[1].lvl == level::warn);
+    CHECK(cap->entries[1].msg == "warning 1 from a");
+}
+
+TEST_CASE("two loggers route to one sink with distinct identities", "[log][identity][logger]") {
+    log_fixture fix;
+    auto* cap = make_capture();
+
+    log_a::info("from a");
+    log_b::info("from b");
+    log_a::error("error from a");
+
+    REQUIRE(cap->entries.size() == 3);
+    CHECK(cap->entries[0].id->app_id == "lib-a");
+    CHECK(cap->entries[1].id->app_id == "lib-b");
+    CHECK(cap->entries[2].id->app_id == "lib-a");
+    CHECK(cap->entries[2].lvl == level::error);
+}
+
+TEST_CASE("logger<I> covers all six levels", "[log][identity][logger]") {
+    log_fixture fix;
+    auto* cap = make_capture();
+
+    log_a::trace   ("t");
+    log_a::debug   ("d");
+    log_a::info    ("i");
+    log_a::warn    ("w");
+    log_a::error   ("e");
+    log_a::critical("c");
+
+    REQUIRE(cap->entries.size() == 6);
+    CHECK(cap->entries[0].lvl == level::trace);
+    CHECK(cap->entries[1].lvl == level::debug);
+    CHECK(cap->entries[2].lvl == level::info);
+    CHECK(cap->entries[3].lvl == level::warn);
+    CHECK(cap->entries[4].lvl == level::error);
+    CHECK(cap->entries[5].lvl == level::critical);
+    for (auto& e : cap->entries) {
+        REQUIRE(e.id.has_value());
+        CHECK(e.id->app_id == "lib-a");
+    }
 }
