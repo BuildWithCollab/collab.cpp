@@ -39,8 +39,8 @@ struct semver {
     inline bool                 operator==(const semver&) const;
 };
 
-// Identity bits used to derive paths, bundle IDs, folder names.
-struct identity {
+// Identifier bits used to derive paths, bundle IDs, folder names.
+struct identifier {
     std::string app_id;    // app slug,            e.g. "collab-core"
     std::string app_name;  // app display name,    e.g. "Collab Core"
     std::string org_id;    // org rDNS slug,       e.g. "mrowrpurr"
@@ -51,9 +51,9 @@ struct identity {
     inline std::string bundle_id() const;
 };
 
-// Project manifest: identity plus descriptive metadata.
+// Project manifest: identifier plus descriptive metadata.
 struct manifest {
-    core::identity             identity;
+    core::identifier             identifier;
     semver                     version;
     std::optional<std::string> description;
     std::vector<std::string>   authors;
@@ -175,7 +175,7 @@ inline bool semver::operator==(const semver& other) const {
         && pre_release == other.pre_release;
 }
 
-inline std::string identity::bundle_id() const {
+inline std::string identifier::bundle_id() const {
     std::string out;
     out.reserve(tld.size() + org_id.size() + app_id.size() + 2);
     out += tld;
@@ -200,7 +200,7 @@ class sink {
 public:
     virtual ~sink() = default;
     virtual void write(level lvl,
-                       const collab::core::identity* id,
+                       const collab::core::identifier* id,
                        std::string_view msg) = 0;
 };
 

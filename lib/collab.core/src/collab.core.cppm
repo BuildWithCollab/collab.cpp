@@ -22,7 +22,7 @@ export import :term;
 // `import collab.core;` and `#include <collab/core.hpp>` reach one entity each.
 
 namespace collab::core {
-    export using ::collab::core::identity;
+    export using ::collab::core::identifier;
     export using ::collab::core::manifest;
     export using ::collab::core::semver;
     export using ::collab::core::version;
@@ -46,7 +46,7 @@ export void set_level(level l);
 export level get_level();
 export void add_sink(std::unique_ptr<sink> snk);
 export void clear_sinks();
-export void log_message(level lvl, const collab::core::identity* id, std::string_view msg);
+export void log_message(level lvl, const collab::core::identifier* id, std::string_view msg);
 
 export void trace   (std::string_view msg);
 export void debug   (std::string_view msg);
@@ -55,12 +55,12 @@ export void warn    (std::string_view msg);
 export void error   (std::string_view msg);
 export void critical(std::string_view msg);
 
-export void trace_with   (const collab::core::identity& id, std::string_view msg);
-export void debug_with   (const collab::core::identity& id, std::string_view msg);
-export void info_with    (const collab::core::identity& id, std::string_view msg);
-export void warn_with    (const collab::core::identity& id, std::string_view msg);
-export void error_with   (const collab::core::identity& id, std::string_view msg);
-export void critical_with(const collab::core::identity& id, std::string_view msg);
+export void trace_with   (const collab::core::identifier& id, std::string_view msg);
+export void debug_with   (const collab::core::identifier& id, std::string_view msg);
+export void info_with    (const collab::core::identifier& id, std::string_view msg);
+export void warn_with    (const collab::core::identifier& id, std::string_view msg);
+export void error_with   (const collab::core::identifier& id, std::string_view msg);
+export void critical_with(const collab::core::identifier& id, std::string_view msg);
 
 // ── spdlog-backed sink factories ──────────────────────────────────────────
 // Defined in lib/collab.core/src/log.cpp; not declared in <collab/core.hpp>

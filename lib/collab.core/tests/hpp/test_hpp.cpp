@@ -20,17 +20,17 @@ public:
     struct entry {
         collab::log::level     lvl;
         bool                   has_id;
-        collab::core::identity id;     // populated only when has_id is true
+        collab::core::identifier id;     // populated only when has_id is true
         std::string            msg;
     };
 
     void write(collab::log::level lvl,
-               const collab::core::identity* id_ptr,
+               const collab::core::identifier* id_ptr,
                std::string_view msg) override {
         entries.push_back({
             lvl,
             id_ptr != nullptr,
-            id_ptr ? *id_ptr : collab::core::identity{},
+            id_ptr ? *id_ptr : collab::core::identifier{},
             std::string(msg),
         });
     }
@@ -58,10 +58,10 @@ static capture_sink* install_capture() {
     return raw;
 }
 
-// ── Static identity used by logger<I> tests ────────────────────────────
+// ── Static identifier used by logger<I> tests ────────────────────────────
 
 namespace test_lib {
-    inline const collab::core::identity identity{
+    inline const collab::core::identifier identifier{
         .app_id   = "test-hpp",
         .app_name = "Header-Only Smoke Test",
         .org_id   = "purr",
@@ -69,7 +69,7 @@ namespace test_lib {
         .tld      = "com",
     };
 
-    using log = collab::log::logger<identity>;
+    using log = collab::log::logger<identifier>;
 }
 
 // ── Value types ────────────────────────────────────────────────────────
@@ -90,8 +90,8 @@ TEST_CASE("hpp: semver pre-release ordering matches SemVer §11", "[hpp][semver]
     REQUIRE(semver{1, 0, 0, "alpha.2"} < semver{1, 0, 0, "alpha.10"});
 }
 
-TEST_CASE("hpp: identity::bundle_id formats as tld.org_id.app_id", "[hpp][identity]") {
-    const collab::core::identity ident{
+TEST_CASE("hpp: identifier::bundle_id formats as tld.org_id.app_id", "[hpp][identifier]") {
+    const collab::core::identifier ident{
         .app_id   = "collab-core",
         .app_name = "Collab Core",
         .org_id   = "mrowrpurr",
@@ -103,7 +103,7 @@ TEST_CASE("hpp: identity::bundle_id formats as tld.org_id.app_id", "[hpp][identi
 
 TEST_CASE("hpp: manifest construction", "[hpp][manifest]") {
     const collab::core::manifest m{
-        .identity = {
+        .identifier = {
             .app_id   = "collab-core",
             .app_name = "Collab Core",
             .org_id   = "mrowrpurr",
@@ -115,7 +115,7 @@ TEST_CASE("hpp: manifest construction", "[hpp][manifest]") {
         .authors     = {"Mrowr Purr"},
         .license     = "0BSD",
     };
-    REQUIRE(m.identity.bundle_id() == "com.mrowrpurr.collab-core");
+    REQUIRE(m.identifier.bundle_id() == "com.mrowrpurr.collab-core");
     REQUIRE(m.version.to_string() == "1.0.0");
     REQUIRE(m.description.has_value());
     REQUIRE(*m.description == "Foundational C++23 library.");
@@ -125,7 +125,7 @@ TEST_CASE("hpp: manifest construction", "[hpp][manifest]") {
 
 // ── Untagged log path ──────────────────────────────────────────────────
 
-TEST_CASE("hpp: untagged free functions dispatch with no identity", "[hpp][log]") {
+TEST_CASE("hpp: untagged free functions dispatch with no identifier", "[hpp][log]") {
     log_fixture fix;
     auto* cap = install_capture();
 
@@ -158,7 +158,7 @@ TEST_CASE("hpp: level filtering suppresses below-threshold messages", "[hpp][log
 
 // ── Tagged log path (logger<I>) ────────────────────────────────────────
 
-TEST_CASE("hpp: logger<I> dispatches with bound identity", "[hpp][log][logger]") {
+TEST_CASE("hpp: logger<I> dispatches with bound identifier", "[hpp][log][logger]") {
     log_fixture fix;
     auto* cap = install_capture();
 

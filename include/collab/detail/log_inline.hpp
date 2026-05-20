@@ -71,52 +71,52 @@ void critical(fmt::format_string<Args...> fs, Args&&... args) {
 }
 
 template<typename... Args>
-void trace_with(const collab::core::identity& id, fmt::format_string<Args...> fs, Args&&... args) {
+void trace_with(const collab::core::identifier& id, fmt::format_string<Args...> fs, Args&&... args) {
     if (get_level() <= level::trace)
         trace_with(id, std::string_view(fmt::format(fs, std::forward<Args>(args)...)));
 }
 
 template<typename... Args>
-void debug_with(const collab::core::identity& id, fmt::format_string<Args...> fs, Args&&... args) {
+void debug_with(const collab::core::identifier& id, fmt::format_string<Args...> fs, Args&&... args) {
     if (get_level() <= level::debug)
         debug_with(id, std::string_view(fmt::format(fs, std::forward<Args>(args)...)));
 }
 
 template<typename... Args>
-void info_with(const collab::core::identity& id, fmt::format_string<Args...> fs, Args&&... args) {
+void info_with(const collab::core::identifier& id, fmt::format_string<Args...> fs, Args&&... args) {
     if (get_level() <= level::info)
         info_with(id, std::string_view(fmt::format(fs, std::forward<Args>(args)...)));
 }
 
 template<typename... Args>
-void warn_with(const collab::core::identity& id, fmt::format_string<Args...> fs, Args&&... args) {
+void warn_with(const collab::core::identifier& id, fmt::format_string<Args...> fs, Args&&... args) {
     if (get_level() <= level::warn)
         warn_with(id, std::string_view(fmt::format(fs, std::forward<Args>(args)...)));
 }
 
 template<typename... Args>
-void error_with(const collab::core::identity& id, fmt::format_string<Args...> fs, Args&&... args) {
+void error_with(const collab::core::identifier& id, fmt::format_string<Args...> fs, Args&&... args) {
     if (get_level() <= level::error)
         error_with(id, std::string_view(fmt::format(fs, std::forward<Args>(args)...)));
 }
 
 template<typename... Args>
-void critical_with(const collab::core::identity& id, fmt::format_string<Args...> fs, Args&&... args) {
+void critical_with(const collab::core::identifier& id, fmt::format_string<Args...> fs, Args&&... args) {
     if (get_level() <= level::critical)
         critical_with(id, std::string_view(fmt::format(fs, std::forward<Args>(args)...)));
 }
 
 // ── Library-bound logger ────────────────────────────────────────────────
-// Each library declares a single static `identity` (typically as a member of
+// Each library declares a single static `identifier` (typically as a member of
 // its manifest) and aliases the logger:
 //
-//   using log = collab::log::logger<my_lib::identity>;
+//   using log = collab::log::logger<my_lib::identifier>;
 //
 // then calls `log::info("...")` throughout. All six methods are static —
-// no per-call object construction. The identity is baked into the template
+// no per-call object construction. The identifier is baked into the template
 // instantiation as a reference NTTP.
 
-template<const collab::core::identity& I>
+template<const collab::core::identifier& I>
 struct logger {
     template<typename... Args>
     static void trace(fmt::format_string<Args...> fs, Args&&... args) {

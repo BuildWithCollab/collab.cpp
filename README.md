@@ -1,6 +1,6 @@
 # collab-core 🏴‍☠️
 
-Foundational C++23 library for the **Collab** stack. Provides identity and manifest types for libraries, semantic versioning, structured logging with per-library attribution, a thread-safe multi-subscriber publisher, and ANSI terminal styling.
+Foundational C++23 library for the **Collab** stack. Provides identifier and manifest types for libraries, semantic versioning, structured logging with per-library attribution, a thread-safe multi-subscriber publisher, and ANSI terminal styling.
 
 Requires a C++23 toolchain with module support.
 
@@ -10,7 +10,7 @@ Requires a C++23 toolchain with module support.
 
 - [Getting started](#getting-started)
 - [Library conventions](#library-conventions)
-- [Identity and manifest](#identity-and-manifest)
+- [Identifier and manifest](#identifier-and-manifest)
 - [Semantic versioning](#semantic-versioning)
 - [Logging](#logging)
 - [Publishers](#publishers)
@@ -31,12 +31,12 @@ import collab.core;
 
 ## Library conventions
 
-A library built on `collab.core` is expected to expose four names from its top-level namespace: **`manifest`**, **`identity`**, **`version`**, and **`log`**. Declare them once at the library's root — usually in a single partition or header — and reuse them everywhere:
+A library built on `collab.core` is expected to expose four names from its top-level namespace: **`manifest`**, **`identifier`**, **`version`**, and **`log`**. Declare them once at the library's root — usually in a single partition or header — and reuse them everywhere:
 
 ```cpp
 namespace collab::net {
     inline const collab::core::manifest manifest{
-        .identity = {
+        .identifier = {
             .app_id   = "collab-net",
             .app_name = "Collab Net",
             .org_id   = "mrowrpurr",
@@ -49,14 +49,14 @@ namespace collab::net {
         .license     = "0BSD",
     };
 
-    inline const auto& identity = manifest.identity;
+    inline const auto& identifier = manifest.identifier;
     inline const auto& version  = manifest.version;
 
-    using log = collab::log::logger<identity>;
+    using log = collab::log::logger<identifier>;
 }
 ```
 
-Two references and a using-alias — the `identity` and `version` views never drift from the manifest, and the logger is bound to this library's identity at compile time (no per-call objects, no implicit context).
+Two references and a using-alias — the `identifier` and `version` views never drift from the manifest, and the logger is bound to this library's identifier at compile time (no per-call objects, no implicit context).
 
 Now any code in the library can just log:
 
@@ -69,7 +69,7 @@ namespace collab::net {
 }
 ```
 
-Sinks installed by the app see the identity and decide how to render it — console sinks prefix with `[Collab Net]` (display name), file sinks prefix with `[com.mrowrpurr.collab-net]` (bundle ID, for grep). Libraries don't deal with sinks; they just log.
+Sinks installed by the app see the identifier and decide how to render it — console sinks prefix with `[Collab Net]` (display name), file sinks prefix with `[com.mrowrpurr.collab-net]` (bundle ID, for grep). Libraries don't deal with sinks; they just log.
 
 ### Log levels
 
@@ -84,14 +84,14 @@ Sinks installed by the app see the identity and decide how to render it — cons
 
 ---
 
-## Identity and manifest
+## Identifier and manifest
 
-`collab::core::identity` carries the bits a library uses to derive paths, bundle IDs, and folder names — app slug + display name, org slug + display name, and the reverse-DNS root segment. `manifest` composes an identity with descriptive metadata: version, description, authors, license.
+`collab::core::identifier` carries the bits a library uses to derive paths, bundle IDs, and folder names — app slug + display name, org slug + display name, and the reverse-DNS root segment. `manifest` composes an identifier with descriptive metadata: version, description, authors, license.
 
-A library that hasn't grown descriptive metadata yet can declare just an identity:
+A library that hasn't grown descriptive metadata yet can declare just an identifier:
 
 ```cpp
-collab::core::identity ident{
+collab::core::identifier ident{
     .app_id   = "collab-core",
     .app_name = "Collab Core",
     .org_id   = "mrowrpurr",
@@ -101,7 +101,7 @@ collab::core::identity ident{
 assert(ident.bundle_id() == "com.mrowrpurr.collab-core");
 ```
 
-`identity::bundle_id()` produces the reverse-DNS form `tld.org_id.app_id`.
+`identifier::bundle_id()` produces the reverse-DNS form `tld.org_id.app_id`.
 
 A `manifest` adds version, description, authors, and license on top — see the example in [Library conventions](#library-conventions). `description` and `license` are `std::optional<std::string>`; absence is distinct from an explicitly empty value. `authors` is a plain `std::vector<std::string>` because an empty vector already means "zero authors" with no ambiguity.
 
@@ -136,9 +136,9 @@ int main() {
 
 With no sinks installed, messages are silently dropped. Level filtering happens *before* `fmt::format` runs, so filtered messages don't pay formatting cost. The default level is `info`.
 
-Built-in sinks cover stdout/stderr (plain or colored) and files. For anything else, subclass `collab::log::sink` (override `write(level, const collab::core::identity*, std::string_view)`) and pass `std::make_unique<my_sink>(...)` to `add_sink`. Sinks receive a pointer to the caller's identity (or `nullptr` for untagged calls), so a custom sink can render attribution, filter by library, or route certain libraries to specific destinations.
+Built-in sinks cover stdout/stderr (plain or colored) and files. For anything else, subclass `collab::log::sink` (override `write(level, const collab::core::identifier*, std::string_view)`) and pass `std::make_unique<my_sink>(...)` to `add_sink`. Sinks receive a pointer to the caller's identifier (or `nullptr` for untagged calls), so a custom sink can render attribution, filter by library, or route certain libraries to specific destinations.
 
-If you need to log from outside a library — a script, a one-off binary, a test — the untagged free functions `collab::log::info(...)`, `warn(...)`, etc. still work. They pass no identity, and sinks emit the bare message.
+If you need to log from outside a library — a script, a one-off binary, a test — the untagged free functions `collab::log::info(...)`, `warn(...)`, etc. still work. They pass no identifier, and sinks emit the bare message.
 
 See [`docs/logging.md`](docs/logging.md) for additional notes.
 

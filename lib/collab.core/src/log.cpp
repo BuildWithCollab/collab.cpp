@@ -54,7 +54,7 @@ void clear_sinks() {
     s.sinks.clear();
 }
 
-void log_message(level lvl, const collab::core::identity* id, std::string_view msg) {
+void log_message(level lvl, const collab::core::identifier* id, std::string_view msg) {
     auto& s = detail::state();
     std::lock_guard lock(s.mtx);
     if (lvl < s.current_level) return;
@@ -73,22 +73,22 @@ void critical(std::string_view msg) { log_message(level::critical, nullptr, msg)
 
 // ── Tagged free functions ───────────────────────────────────────────────
 
-void trace_with(const collab::core::identity& id, std::string_view msg) {
+void trace_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::trace, &id, msg);
 }
-void debug_with(const collab::core::identity& id, std::string_view msg) {
+void debug_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::debug, &id, msg);
 }
-void info_with(const collab::core::identity& id, std::string_view msg) {
+void info_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::info, &id, msg);
 }
-void warn_with(const collab::core::identity& id, std::string_view msg) {
+void warn_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::warn, &id, msg);
 }
-void error_with(const collab::core::identity& id, std::string_view msg) {
+void error_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::error, &id, msg);
 }
-void critical_with(const collab::core::identity& id, std::string_view msg) {
+void critical_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::critical, &id, msg);
 }
 
@@ -119,11 +119,11 @@ namespace {
         return std::string(prefix) + std::to_string(++counter);
     }
 
-    // Console sinks render identity using the display name — humans reading
+    // Console sinks render identifier using the display name — humans reading
     // a terminal want "[Collab Net]" not "[com.mrowrpurr.collab-net]".
     void emit_console(spdlog::logger& logger,
                       level lvl,
-                      const collab::core::identity* id,
+                      const collab::core::identifier* id,
                       std::string_view msg) {
         if (id)
             logger.log(to_spdlog_level(lvl), "[{}] {}", id->app_name, msg);
@@ -173,7 +173,7 @@ namespace {
         stdout_sink() : stdout_sink(make_spdlog_pair(
             logger_prefix_stdout,
             [](const std::string& n) { return spdlog::stdout_logger_mt(n); })) {}
-        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+        void write(level lvl, const collab::core::identifier* id, std::string_view msg) override {
             emit_console(*logger_, lvl, id, msg);
         }
     private:
@@ -186,7 +186,7 @@ namespace {
         stdout_color_sink() : stdout_color_sink(make_spdlog_pair(
             logger_prefix_stdout,
             [](const std::string& n) { return spdlog::stdout_color_mt(n); })) {}
-        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+        void write(level lvl, const collab::core::identifier* id, std::string_view msg) override {
             emit_console(*logger_, lvl, id, msg);
         }
     private:
@@ -199,7 +199,7 @@ namespace {
         stderr_sink() : stderr_sink(make_spdlog_pair(
             logger_prefix_stderr,
             [](const std::string& n) { return spdlog::stderr_logger_mt(n); })) {}
-        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+        void write(level lvl, const collab::core::identifier* id, std::string_view msg) override {
             emit_console(*logger_, lvl, id, msg);
         }
     private:
@@ -212,7 +212,7 @@ namespace {
         stderr_color_sink() : stderr_color_sink(make_spdlog_pair(
             logger_prefix_stderr,
             [](const std::string& n) { return spdlog::stderr_color_mt(n); })) {}
-        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+        void write(level lvl, const collab::core::identifier* id, std::string_view msg) override {
             emit_console(*logger_, lvl, id, msg);
         }
     private:
@@ -220,7 +220,7 @@ namespace {
             : spdlog_sink_base(std::move(p.logger), std::move(p.name)) {}
     };
 
-    // File sinks render identity using the bundle ID — "[com.mrowrpurr.collab-net]"
+    // File sinks render identifier using the bundle ID — "[com.mrowrpurr.collab-net]"
     // is what you want for grepping log files long after the fact.
     class file_sink final : public spdlog_sink_base {
     public:
@@ -233,7 +233,7 @@ namespace {
             logger_->flush_on(spdlog::level::trace);
         }
 
-        void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+        void write(level lvl, const collab::core::identifier* id, std::string_view msg) override {
             if (id)
                 logger_->log(to_spdlog_level(lvl), "[{}] {}", id->bundle_id(), msg);
             else

@@ -66,7 +66,7 @@ inline void clear_sinks() {
     s.sinks.clear();
 }
 
-inline void log_message(level lvl, const collab::core::identity* id, std::string_view msg) {
+inline void log_message(level lvl, const collab::core::identifier* id, std::string_view msg) {
     auto& s = detail::state();
     std::lock_guard lock(s.mtx);
     if (lvl < s.current_level) return;
@@ -83,24 +83,24 @@ inline void warn    (std::string_view msg) { log_message(level::warn,     nullpt
 inline void error   (std::string_view msg) { log_message(level::error,    nullptr, msg); }
 inline void critical(std::string_view msg) { log_message(level::critical, nullptr, msg); }
 
-// ── Tagged free functions: message carries the caller's identity ────────
+// ── Tagged free functions: message carries the caller's identifier ────────
 
-inline void trace_with(const collab::core::identity& id, std::string_view msg) {
+inline void trace_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::trace, &id, msg);
 }
-inline void debug_with(const collab::core::identity& id, std::string_view msg) {
+inline void debug_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::debug, &id, msg);
 }
-inline void info_with(const collab::core::identity& id, std::string_view msg) {
+inline void info_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::info, &id, msg);
 }
-inline void warn_with(const collab::core::identity& id, std::string_view msg) {
+inline void warn_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::warn, &id, msg);
 }
-inline void error_with(const collab::core::identity& id, std::string_view msg) {
+inline void error_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::error, &id, msg);
 }
-inline void critical_with(const collab::core::identity& id, std::string_view msg) {
+inline void critical_with(const collab::core::identifier& id, std::string_view msg) {
     log_message(level::critical, &id, msg);
 }
 

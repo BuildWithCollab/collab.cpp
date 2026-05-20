@@ -20,11 +20,11 @@ class capture_sink final : public sink {
 public:
     struct entry {
         level                                lvl;
-        std::optional<collab::core::identity> id;
+        std::optional<collab::core::identifier> id;
         std::string                          msg;
     };
 
-    void write(level lvl, const collab::core::identity* id, std::string_view msg) override {
+    void write(level lvl, const collab::core::identifier* id, std::string_view msg) override {
         entries.push_back({
             lvl,
             id ? std::optional{*id} : std::nullopt,
@@ -317,7 +317,7 @@ TEST_CASE("multiple sinks receive the same message", "[log]") {
 // ── Tagged logging ──────────────────────────────────────────────────
 
 namespace {
-    inline const collab::core::identity test_identity_a{
+    inline const collab::core::identifier test_identifier_a{
         .app_id   = "lib-a",
         .app_name = "Lib A",
         .org_id   = "purr",
@@ -325,7 +325,7 @@ namespace {
         .tld      = "com",
     };
 
-    inline const collab::core::identity test_identity_b{
+    inline const collab::core::identifier test_identifier_b{
         .app_id   = "lib-b",
         .app_name = "Lib B",
         .org_id   = "purr",
@@ -333,11 +333,11 @@ namespace {
         .tld      = "com",
     };
 
-    using log_a = collab::log::logger<test_identity_a>;
-    using log_b = collab::log::logger<test_identity_b>;
+    using log_a = collab::log::logger<test_identifier_a>;
+    using log_b = collab::log::logger<test_identifier_b>;
 }
 
-TEST_CASE("untagged log entries arrive with no identity", "[log][identity]") {
+TEST_CASE("untagged log entries arrive with no identifier", "[log][identifier]") {
     log_fixture fix;
     auto* cap = make_capture();
 
@@ -348,12 +348,12 @@ TEST_CASE("untagged log entries arrive with no identity", "[log][identity]") {
     CHECK(cap->entries[0].msg == "plain");
 }
 
-TEST_CASE("info_with carries identity through to the sink", "[log][identity]") {
+TEST_CASE("info_with carries identifier through to the sink", "[log][identifier]") {
     log_fixture fix;
     auto* cap = make_capture();
 
-    info_with(test_identity_a, "tagged plain");
-    info_with(test_identity_a, "tagged fmt {}", 42);
+    info_with(test_identifier_a, "tagged plain");
+    info_with(test_identifier_a, "tagged fmt {}", 42);
 
     REQUIRE(cap->entries.size() == 2);
 
@@ -366,7 +366,7 @@ TEST_CASE("info_with carries identity through to the sink", "[log][identity]") {
     CHECK(cap->entries[1].msg == "tagged fmt 42");
 }
 
-TEST_CASE("logger<I> dispatches with the bound identity", "[log][identity][logger]") {
+TEST_CASE("logger<I> dispatches with the bound identifier", "[log][identifier][logger]") {
     log_fixture fix;
     auto* cap = make_capture();
 
@@ -386,7 +386,7 @@ TEST_CASE("logger<I> dispatches with the bound identity", "[log][identity][logge
     CHECK(cap->entries[1].msg == "warning 1 from a");
 }
 
-TEST_CASE("two loggers route to one sink with distinct identities", "[log][identity][logger]") {
+TEST_CASE("two loggers route to one sink with distinct identifiers", "[log][identifier][logger]") {
     log_fixture fix;
     auto* cap = make_capture();
 
@@ -401,7 +401,7 @@ TEST_CASE("two loggers route to one sink with distinct identities", "[log][ident
     CHECK(cap->entries[2].lvl == level::error);
 }
 
-TEST_CASE("logger<I> covers all six levels", "[log][identity][logger]") {
+TEST_CASE("logger<I> covers all six levels", "[log][identifier][logger]") {
     log_fixture fix;
     auto* cap = make_capture();
 

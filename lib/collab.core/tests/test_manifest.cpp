@@ -7,8 +7,8 @@ import collab.core;
 
 using namespace collab::core;
 
-TEST_CASE("identity construction", "[manifest][identity]") {
-    const identity ident{
+TEST_CASE("identifier construction", "[manifest][identifier]") {
+    const identifier ident{
         .app_id   = "collab-core",
         .app_name = "Collab Core",
         .org_id   = "mrowrpurr",
@@ -22,8 +22,8 @@ TEST_CASE("identity construction", "[manifest][identity]") {
     REQUIRE(ident.tld      == "com");
 }
 
-TEST_CASE("identity default fields are empty", "[manifest][identity]") {
-    const identity ident{};
+TEST_CASE("identifier default fields are empty", "[manifest][identifier]") {
+    const identifier ident{};
     REQUIRE(ident.app_id.empty());
     REQUIRE(ident.app_name.empty());
     REQUIRE(ident.org_id.empty());
@@ -31,8 +31,8 @@ TEST_CASE("identity default fields are empty", "[manifest][identity]") {
     REQUIRE(ident.tld.empty());
 }
 
-TEST_CASE("identity::bundle_id formats as tld.org_id.app_id", "[manifest][identity][bundle_id]") {
-    const identity ident{
+TEST_CASE("identifier::bundle_id formats as tld.org_id.app_id", "[manifest][identifier][bundle_id]") {
+    const identifier ident{
         .app_id   = "collab-core",
         .app_name = "Collab Core",
         .org_id   = "mrowrpurr",
@@ -42,8 +42,8 @@ TEST_CASE("identity::bundle_id formats as tld.org_id.app_id", "[manifest][identi
     REQUIRE(ident.bundle_id() == "com.mrowrpurr.collab-core");
 }
 
-TEST_CASE("identity::bundle_id ignores display names", "[manifest][identity][bundle_id]") {
-    const identity ident{
+TEST_CASE("identifier::bundle_id ignores display names", "[manifest][identifier][bundle_id]") {
+    const identifier ident{
         .app_id   = "my-tool",
         .app_name = "Completely Different Display Name",
         .org_id   = "acme",
@@ -55,7 +55,7 @@ TEST_CASE("identity::bundle_id ignores display names", "[manifest][identity][bun
 
 TEST_CASE("manifest construction with only required fields", "[manifest]") {
     const manifest m{
-        .identity = {
+        .identifier = {
             .app_id   = "thing",
             .app_name = "Thing",
             .org_id   = "purr",
@@ -64,7 +64,7 @@ TEST_CASE("manifest construction with only required fields", "[manifest]") {
         },
         .version = semver{0, 1, 0},
     };
-    REQUIRE(m.identity.bundle_id() == "com.purr.thing");
+    REQUIRE(m.identifier.bundle_id() == "com.purr.thing");
     REQUIRE(m.version == semver{0, 1, 0});
     REQUIRE_FALSE(m.description.has_value());
     REQUIRE(m.authors.empty());
@@ -73,7 +73,7 @@ TEST_CASE("manifest construction with only required fields", "[manifest]") {
 
 TEST_CASE("manifest construction with full metadata", "[manifest]") {
     const manifest m{
-        .identity = {
+        .identifier = {
             .app_id   = "collab-core",
             .app_name = "Collab Core",
             .org_id   = "mrowrpurr",
@@ -85,7 +85,7 @@ TEST_CASE("manifest construction with full metadata", "[manifest]") {
         .authors     = {"Mrowr Purr", "Parker"},
         .license     = "0BSD",
     };
-    REQUIRE(m.identity.bundle_id() == "com.mrowrpurr.collab-core");
+    REQUIRE(m.identifier.bundle_id() == "com.mrowrpurr.collab-core");
     REQUIRE(m.version.to_string() == "1.2.0-rc.1");
     REQUIRE(m.description.has_value());
     REQUIRE(*m.description == "Foundational C++23 library for the Collab stack.");
@@ -98,7 +98,7 @@ TEST_CASE("manifest construction with full metadata", "[manifest]") {
 
 TEST_CASE("manifest distinguishes unset from explicitly empty", "[manifest][optional]") {
     manifest m{
-        .identity = {
+        .identifier = {
             .app_id   = "x",
             .app_name = "X",
             .org_id   = "o",
