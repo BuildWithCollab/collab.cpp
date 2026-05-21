@@ -13,6 +13,7 @@ Requires a C++23 toolchain with module support.
 - [Identifier and manifest](#identifier-and-manifest)
 - [Semantic versioning](#semantic-versioning)
 - [Logging](#logging)
+- [Errors](#errors)
 - [Publishers](#publishers)
 - [Terminal styling](#terminal-styling)
 - [License](#license)
@@ -31,7 +32,7 @@ import collab.core;
 
 ## Library conventions
 
-A library built on `collab.core` is expected to expose four names from its top-level namespace: **`manifest`**, **`identifier`**, **`version`**, and **`log`**. Declare them once at the library's root — usually in a single partition or header — and reuse them everywhere:
+A library built on `collab.core` is expected to expose five names from its top-level namespace: **`manifest`**, **`identifier`**, **`version`**, **`log`**, and **`error`**. Declare them once at the library's root — usually in a single partition or header — and reuse them everywhere:
 
 ```cpp
 namespace collab::net {
@@ -50,13 +51,17 @@ namespace collab::net {
     };
 
     inline const auto& identifier = manifest.identifier;
-    inline const auto& version  = manifest.version;
+    inline const auto& version    = manifest.version;
 
     using log = collab::log::logger<identifier>;
+
+    struct error : collab::core::error {
+        using collab::core::error::error;
+    };
 }
 ```
 
-Two references and a using-alias — the `identifier` and `version` views never drift from the manifest, and the logger is bound to this library's identifier at compile time (no per-call objects, no implicit context).
+The `identifier` and `version` views never drift from the manifest; the logger is bound to this library's identifier at compile time; and `error` anchors the library's exception hierarchy (specific error types live in a nested `errors` namespace — see [Errors](#errors)).
 
 Now any code in the library can just log:
 
@@ -141,6 +146,62 @@ Built-in sinks cover stdout/stderr (plain or colored) and files. For anything el
 If you need to log from outside a library — a script, a one-off binary, a test — the untagged free functions `collab::log::info(...)`, `warn(...)`, etc. still work. They pass no identifier, and sinks emit the bare message.
 
 See [`docs/logging.md`](docs/logging.md) for additional notes.
+
+---
+
+## Errors
+
+`collab::core::error` is the base for every exception type in the Collab stack. Each library declares a top-level `error` deriving from it (see [Library conventions](#library-conventions)), and specific error types live in a nested `errors` namespace:
+
+```cpp
+namespace collab::net::errors {
+    // No extra fields — inherit the base ctors (raw string or fmt::format_string):
+    struct timeout : collab::net::error {
+        using collab::net::error::error;
+    };
+
+    // Typed payload — write the ctor, build the message from the data:
+    struct connect_failed : collab::net::error {
+        std::string host;
+        int         port;
+
+        connect_failed(std::string h, int p)
+            : collab::net::error("failed to connect to {}:{}", h, p)
+            , host(std::move(h))
+            , port(p)
+        {}
+    };
+}
+```
+
+Throw site:
+
+```cpp
+throw collab::net::errors::timeout{"read timed out after {}s", 30};
+throw collab::net::errors::connect_failed{"example.com", 443};
+```
+
+Catch site — standard C++ chain, most-specific first:
+
+```cpp
+try { ... }
+catch (const collab::net::errors::connect_failed& e) { recover(e.host, e.port); }
+catch (const collab::net::error& e)                  { collab::net::log::error("{}", e.what()); }
+catch (const collab::core::error& e)                 { /* any collab lib */ }
+catch (const std::exception& e)                      { /* belt + suspenders */ }
+```
+
+Caught objects carry their typed payload — read members directly (`e.host`, `e.port`), use `e.what()` for the human-readable message.
+
+The same struct is also a valid `std::expected<T, E>` error type — no wrapping, no slicing. Pack alternatives in a `std::variant` when an API can return one of several:
+
+```cpp
+std::expected<connection, collab::net::errors::connect_failed> connect(...);
+
+using rpc_error = std::variant<collab::net::errors::timeout,
+                               collab::net::errors::connect_failed>;
+std::expected<response, rpc_error> rpc_call(...);
+```
 
 ---
 

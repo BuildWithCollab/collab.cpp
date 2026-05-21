@@ -5,10 +5,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <exception>
+#include <expected>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <collab/core.hpp>
@@ -215,4 +219,140 @@ TEST_CASE("hpp: multiple sinks all receive the same tagged message", "[hpp][log]
     CHECK(cap2->entries[0].msg == "broadcast");
     CHECK(cap1->entries[0].id.app_id == "test-hpp");
     CHECK(cap2->entries[0].id.app_id == "test-hpp");
+}
+
+// ── Error base + library/leaf hierarchy ────────────────────────────────
+
+namespace test_lib {
+    struct error : collab::core::error {
+        using collab::core::error::error;
+    };
+
+    namespace errors {
+        struct trivial : test_lib::error {
+            using test_lib::error::error;
+        };
+
+        struct fancy : test_lib::error {
+            int         code;
+            std::string detail;
+
+            fancy(int c, std::string d)
+                : test_lib::error("fancy error: code {} ({})", c, d)
+                , code(c)
+                , detail(std::move(d))
+            {}
+        };
+    }
+}
+
+TEST_CASE("hpp: error constructs from string_view", "[hpp][error]") {
+    const collab::core::error e{std::string_view{"plain message"}};
+    REQUIRE(std::string_view{e.what()} == "plain message");
+}
+
+TEST_CASE("hpp: error constructs from format string", "[hpp][error]") {
+    const collab::core::error e{"connect failed: {}:{}", "example.com", 443};
+    REQUIRE(std::string_view{e.what()} == "connect failed: example.com:443");
+}
+
+TEST_CASE("hpp: trivial leaf inherits format ctor via using-declaration", "[hpp][error]") {
+    try {
+        throw test_lib::errors::trivial{"trivial {} fired", "thing"};
+    } catch (const test_lib::errors::trivial& e) {
+        CHECK(std::string_view{e.what()} == "trivial thing fired");
+    }
+}
+
+TEST_CASE("hpp: fancy leaf builds message from typed payload", "[hpp][error]") {
+    const test_lib::errors::fancy e{42, "bad stuff"};
+    CHECK(e.code == 42);
+    CHECK(e.detail == "bad stuff");
+    CHECK(std::string_view{e.what()} == "fancy error: code 42 (bad stuff)");
+}
+
+TEST_CASE("hpp: catch chain: leaf is reachable as leaf", "[hpp][error][catch]") {
+    try {
+        throw test_lib::errors::fancy{7, "x"};
+    } catch (const test_lib::errors::fancy& e) {
+        CHECK(e.code == 7);
+        CHECK(e.detail == "x");
+    } catch (...) {
+        FAIL("expected fancy catch");
+    }
+}
+
+TEST_CASE("hpp: catch chain: leaf catches as library base", "[hpp][error][catch]") {
+    try {
+        throw test_lib::errors::fancy{1, "y"};
+    } catch (const test_lib::errors::trivial&) {
+        FAIL("wrong leaf");
+    } catch (const test_lib::error& e) {
+        CHECK(std::string_view{e.what()} == "fancy error: code 1 (y)");
+    }
+}
+
+TEST_CASE("hpp: catch chain: library error catches as collab::core::error", "[hpp][error][catch]") {
+    try {
+        throw test_lib::errors::trivial{"core-level catch"};
+    } catch (const collab::core::error& e) {
+        CHECK(std::string_view{e.what()} == "core-level catch");
+    }
+}
+
+TEST_CASE("hpp: catch chain: collab::core::error catches as std::exception", "[hpp][error][catch]") {
+    try {
+        throw collab::core::error{"std-exception catch"};
+    } catch (const std::exception& e) {
+        CHECK(std::string_view{e.what()} == "std-exception catch");
+    }
+}
+
+TEST_CASE("hpp: catch chain: collab::core::error catches as std::runtime_error", "[hpp][error][catch]") {
+    try {
+        throw collab::core::error{"runtime-error catch"};
+    } catch (const std::runtime_error& e) {
+        CHECK(std::string_view{e.what()} == "runtime-error catch");
+    }
+}
+
+TEST_CASE("hpp: error usable as std::expected error type", "[hpp][error][expected]") {
+    auto compute = [](bool ok) -> std::expected<int, test_lib::errors::fancy> {
+        if (!ok) return std::unexpected(test_lib::errors::fancy{99, "nope"});
+        return 42;
+    };
+
+    auto ok  = compute(true);
+    auto bad = compute(false);
+
+    REQUIRE(ok.has_value());
+    CHECK(*ok == 42);
+
+    REQUIRE_FALSE(bad.has_value());
+    CHECK(bad.error().code == 99);
+    CHECK(bad.error().detail == "nope");
+    CHECK(std::string_view{bad.error().what()} == "fancy error: code 99 (nope)");
+}
+
+TEST_CASE("hpp: error usable in std::variant for expected return", "[hpp][error][expected][variant]") {
+    using either = std::variant<test_lib::errors::trivial, test_lib::errors::fancy>;
+
+    auto compute = [](int which) -> std::expected<int, either> {
+        if (which == 1) return std::unexpected(either{test_lib::errors::trivial{"first"}});
+        if (which == 2) return std::unexpected(either{test_lib::errors::fancy{7, "second"}});
+        return 0;
+    };
+
+    auto r1 = compute(1);
+    auto r2 = compute(2);
+    REQUIRE_FALSE(r1.has_value());
+    REQUIRE_FALSE(r2.has_value());
+
+    REQUIRE(std::holds_alternative<test_lib::errors::trivial>(r1.error()));
+    CHECK(std::string_view{std::get<test_lib::errors::trivial>(r1.error()).what()} == "first");
+
+    REQUIRE(std::holds_alternative<test_lib::errors::fancy>(r2.error()));
+    const auto& f = std::get<test_lib::errors::fancy>(r2.error());
+    CHECK(f.code == 7);
+    CHECK(f.detail == "second");
 }

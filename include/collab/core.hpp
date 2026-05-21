@@ -37,6 +37,7 @@
 
 #include "collab/detail/state.hpp"
 #include "collab/detail/types.hpp"
+#include "collab/error.hpp"
 
 namespace collab::log {
 
