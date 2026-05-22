@@ -3,7 +3,7 @@ module;
 #include <iostream>
 #include <rang.hpp>
 
-module collab.core;
+module collab;
 
 import :term;
 

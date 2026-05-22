@@ -2,7 +2,7 @@ module;
 
 #include <iosfwd>
 
-export module collab.core:term;
+export module collab:term;
 
 export namespace collab::term {
 

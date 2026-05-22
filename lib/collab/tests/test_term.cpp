@@ -4,7 +4,7 @@
 #include <fstream>
 #include <string>
 
-import collab.core;
+import collab;
 
 using namespace collab::term;
 

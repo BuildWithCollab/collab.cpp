@@ -48,8 +48,11 @@ end
 -- Catch2 package and breaks the link. Opt back into the new ABI.
 set_policy("build.c++.modules.gcc.cxx11abi", true)
 
-add_requires("spdlog")
+add_repositories("BuildWithCollab https://github.com/BuildWithCollab/Packages")
+
+add_requires("collab-hpp")
 add_requires("fmt")
+add_requires("spdlog")
 add_requires("rang")
 
 option("build_tests")
@@ -62,4 +65,4 @@ if get_config("build_tests") then
     add_requires("catch2")
 end
 
-includes("lib/collab.core/xmake.lua")
+includes("lib/collab/xmake.lua")
