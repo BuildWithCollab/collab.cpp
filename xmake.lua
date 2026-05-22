@@ -51,7 +51,6 @@ set_policy("build.c++.modules.gcc.cxx11abi", true)
 add_repositories("BuildWithCollab https://github.com/BuildWithCollab/Packages")
 
 add_requires("collab-hpp")
-add_requires("fmt")
 add_requires("spdlog")
 add_requires("rang")
 
