@@ -7,7 +7,10 @@ target("collab")
     add_packages("rang")
     -- Use external fmt in spdlog so its bundled fmt doesn't collide with the
     -- standalone fmt reached through collab-hpp's header unit.
-    add_defines("SPDLOG_FMT_EXTERNAL")
+    -- Pass as a table to dodge xmake's get_headerunit_key bug (support.lua:154
+    -- calls table.concat on `target:get("defines")` and crashes when it's a
+    -- bare string instead of a list).
+    add_defines({"SPDLOG_FMT_EXTERNAL"})
 
 if get_config("build_tests") then
     target("tests-collab")
