@@ -37,9 +37,15 @@ void critical(std::string_view) {}
 
 namespace {
 
-// Force MSVC to emit the inline functions as out-of-line COMDAT symbols in
-// collab.lib so `import collab;` consumers (which see only declarations) can
-// link. Header consumers still inline normally; the linker dedupes COMDATs.
+// Force the compiler to emit the inline functions as out-of-line COMDAT
+// symbols in libcollab.a / collab.lib so `import collab;` consumers (which
+// see only declarations) can link. Header consumers still inline normally;
+// the linker dedupes COMDATs. The `gnu::used` attribute is required on
+// GCC/Clang — without it, -O2 dead-code-eliminates the whole array and the
+// ODR-uses with it.
+#if defined(__GNUC__) || defined(__clang__)
+[[gnu::used]]
+#endif
 [[maybe_unused]] const void* const _emit_log_symbols[] = {
     reinterpret_cast<const void*>(static_cast<void(*)()>(&collab::log::clear_sinks)),
     reinterpret_cast<const void*>(static_cast<void(*)(collab::log::level)>(&collab::log::set_level)),

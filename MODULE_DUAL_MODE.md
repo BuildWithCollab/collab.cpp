@@ -66,7 +66,11 @@ Four files per area of the library:
 - **Decls header is the single source of type declarations.** Both the inline header and the cppm GMF include it. A TU that does `#include + import` sees the same declaration of every type from both paths — same entity, no C1117.
 - **Inline header is what `#include` consumers get.** Inline bodies in their TUs as normal. Inline namespace-scope variables for state get COMDAT-deduplicated across TUs by the linker.
 - **cppm declares no entities of its own.** It re-exports via `using ::lib::name;`. The using-decl carries a reference to the global-module entity declared in the decls header, not a fresh named-module declaration. BMI carries no inline bodies → no IFC ICE.
-- **Impl unit `#include`s the inline header**, so its TU sees the inline definitions. The forced-emission construct (an `[[maybe_unused]]` array of function addresses, or equivalent) coerces MSVC to emit those inline functions as COMDAT symbols in the compiled `.lib`, satisfying `import`-only consumers at link time. Header-only consumers still inline normally; COMDAT folding makes everything resolve to one address.
+- **Impl unit `#include`s the inline header**, so its TU sees the inline definitions. The forced-emission construct (a const array of function-pointer-cast-to-void* values, one entry per exported function) coerces the compiler to emit those inline functions as COMDAT symbols in the compiled library archive, satisfying `import`-only consumers at link time. Header-only consumers still inline normally; COMDAT folding makes everything resolve to one address.
+
+  The array needs two attributes to survive across compilers:
+  - `[[maybe_unused]]` — suppresses the unused-variable warning on every compiler.
+  - `[[gnu::used]]` (on GCC and Clang only, gated with `#if defined(__GNUC__) || defined(__clang__)`) — tells the optimizer the variable is observed externally and must not be dead-code-eliminated. Without it, `-O2` on GCC/Clang drops the entire array, which drops the address-take ODR-uses, which drops the symbol emission — and `import`-only consumers fail to link. MSVC's optimizer respects address-taken externally-linkable storage without an extra annotation; GCC/Clang's does not.
 
 ### Shared state
 
@@ -147,12 +151,21 @@ This is what verifies the `inline` namespace-scope variable is actually being CO
 
 - **BMI cache survives across architecture changes.** When toggling the cppm shape, MSVC's cached `.ifc` may be incompatible with the new build. Symptom: `error C2235: mismatching target architecture for compiled module interface`. Fix: clear the BMI cache (e.g., delete the build's generated-files directory) before rebuilding after any structural change to the cppm or its dependencies.
 
-- **Forgetting to force symbol emission in the impl unit.** Inline bodies in the impl unit's TU get optimized away — no symbol in the `.lib` → `import`-only consumers fail at link with LNK2019. Take addresses of every exported function in a `[[maybe_unused]]` const array to coerce emission.
+- **Forgetting to force symbol emission in the impl unit.** Inline bodies in the impl unit's TU get optimized away — no symbol in the compiled library → `import`-only consumers fail at link with `LNK2019` (MSVC) or `undefined reference` (GCC/Clang). Take addresses of every exported function in a const array.
+
+- **GCC/Clang dead-code-eliminating the force-emission array.** `[[maybe_unused]]` alone is not enough on GCC/Clang at `-O2`+ — the optimizer happily strips a variable that is never read, even if its initializer takes addresses. Add `[[gnu::used]]` (guarded by `#if defined(__GNUC__) || defined(__clang__)`) to force the variable's emission, which in turn forces the address-take ODR-uses to materialize as real symbols. MSVC does not need this annotation.
 
 ---
 
 ## What the verification does NOT cover
 
 - Templates exported through the BMI. Templates must be visible at instantiation; this is a separate problem from non-template inline functions and may need additional architectural treatment.
-- Cross-compiler portability. The patterns above are MSVC 14.50-specific. GCC and Clang have their own module-attachment behaviors that may require adjustments.
 - ABI stability across module/header switches. The patterns above target source-level coherence; if the library is consumed across compilation boundaries (DLLs, separately compiled static libs), additional ABI considerations apply.
+
+## Verified compilers
+
+Architecture and toggle behavior verified on:
+- MSVC 14.50 (Visual Studio 2026)
+- GCC and Clang (with the `[[gnu::used]]` annotation on the force-emission array, as described above)
+
+Differences from MSVC are noted inline where they matter (the force-emission attribute is the only one observed so far).
