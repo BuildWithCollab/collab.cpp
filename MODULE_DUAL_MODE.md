@@ -66,6 +66,8 @@ Four files per area of the library:
 - **Decls header is the single source of type declarations.** Both the inline header and the cppm GMF include it. A TU that does `#include + import` sees the same declaration of every type from both paths — same entity, no C1117.
 - **Inline header is what `#include` consumers get.** Inline bodies in their TUs as normal. Inline namespace-scope variables for state get COMDAT-deduplicated across TUs by the linker.
 - **cppm declares no entities of its own.** It re-exports via `using ::lib::name;`. The using-decl carries a reference to the global-module entity declared in the decls header, not a fresh named-module declaration. BMI carries no inline bodies → no IFC ICE.
+
+  *Overload sets:* per `[namespace.udecl]`, a using-declaration is name-based and pulls the **entire overload set** for that name. One `using ::lib::name;` re-exports every overload of `name` reachable in the decls header — non-template overloads, template overloads, and any combination thereof. You do not list each overload's signature. This has been observed working on MSVC 14.50 and GCC/Clang for libraries with mixed non-template and template overloads (e.g., a `void log(std::string_view)` overload alongside a `template<typename... Args> void log(std::format_string<Args...>, Args&&...)`). MSVC has had historical bugs around this in module purviews, so if you're working on a toolchain that may not be current, an overload-set verification test is cheap: add a second overload of one exported function and call both via `import lib;`.
 - **Impl unit `#include`s the inline header**, so its TU sees the inline definitions. The forced-emission construct (a const array of function-pointer-cast-to-void* values, one entry per exported function) coerces the compiler to emit those inline functions as COMDAT symbols in the compiled library archive, satisfying `import`-only consumers at link time. Header-only consumers still inline normally; COMDAT folding makes everything resolve to one address.
 
   The array needs two attributes to survive across compilers:
@@ -74,7 +76,32 @@ Four files per area of the library:
 
 ### Shared state
 
-Mutable state shared across consumer paths (e.g., a singleton registry) must be a **namespace-scope `inline` variable**, not a function-local static inside an inline function. Function-local statics live inside a function entity; when module attachment splits the function into two entities (global-module via header, named-module via import), each entity has its own static and state fragments. Namespace-scope `inline` variables get COMDAT-deduplicated by the linker regardless of which TUs see them — one address per program.
+> ⚠️ The word "inline" appears in two completely different roles here. Read carefully.
+
+Mutable state shared across consumer paths (e.g., a singleton registry) must be a **namespace-scope `inline` variable**:
+
+```cpp
+namespace lib::detail {
+inline log_state g_state{};   // ← this kind of inline: variable, COMDAT-folded by the linker
+}
+```
+
+It must **NOT** be a function-local static inside an inline function:
+
+```cpp
+namespace lib::detail {
+inline log_state& state() {   // ← this kind of inline: function, dangerous for shared state
+    static log_state s;        //     The `static` here is what holds the state.
+    return s;
+}
+}
+```
+
+Why the second pattern fragments under modules: the function-local static `s` lives inside the entity `state`. When module attachment splits `state` into two entities (the global-module version reached via `#include`, the named-module version reached via `import`), each entity has its own copy of `s`. State written through one path is invisible to readers via the other. The "inline" on the function doesn't save you — inline-function-local-static deduplication is a property of the **function** being the same entity, and module attachment makes them not the same entity.
+
+The first pattern works because the inline keyword applies to a **variable** at namespace scope. Inline variables get COMDAT semantics directly: every TU that sees the declaration emits a COMDAT definition, the linker folds them all to one address regardless of which TUs participated, and module attachment does not change the mangled name for namespace-scope variables (verified empirically on MSVC 14.50). One program, one address, one state.
+
+**Rule of thumb:** if a shared-state pattern relies on `static` *inside* a function for its singleton-ness, it does not survive module attachment splitting. Move the storage to namespace scope and let the `inline` keyword on the variable carry the singleton guarantee.
 
 ---
 
