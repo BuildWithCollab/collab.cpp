@@ -6,6 +6,113 @@ The design assumes you've read `MODULE_DUAL_MODE.md` and understand *why* the fo
 
 ---
 
+## Example: library `widget` with two areas
+
+Concrete picture before any prose. Library named `widget`, two areas: `color` and `shape`. Legend: ✏️ = author writes, 🤖 = generator emits.
+
+```
+widget/
+├── include/
+│   └── widget/
+│       ├── widget.hpp                  ✏️  umbrella, #includes each area header
+│       ├── color.hpp                   ✏️  canonical for color area
+│       ├── shape.hpp                   ✏️  canonical for shape area
+│       └── detail/
+│           ├── color.decls.hpp         🤖  color, bodies stripped
+│           └── shape.decls.hpp         🤖  shape, bodies stripped
+├── src/
+│   ├── widget.cppm                     ✏️  primary, aggregates partitions
+│   ├── color.cppm                      🤖  color partition (using-decls)
+│   ├── color_impl.cpp                  🤖  color impl unit (address-take)
+│   ├── shape.cppm                      🤖  shape partition
+│   └── shape_impl.cpp                  🤖  shape impl unit
+├── scripts/
+│   └── generate.py                     ✏️  the generator script itself
+└── tests/
+    ├── test_include_only.cpp           ✏️  binary 1: #include widget/widget.hpp only
+    ├── test_import_only.cpp            ✏️  binary 2: import widget; only
+    └── test_dual.cpp                   ✏️  binary 3: both, in same TU
+```
+
+What the author touches when adding a function: edit `include/widget/color.hpp` (one line), re-run `scripts/generate.py`. The five 🤖 files update mechanically.
+
+### What's inside each file
+
+**✏️ `include/widget/color.hpp`** — author writes this:
+```cpp
+#pragma once
+#include <string_view>
+namespace widget::color {
+enum class rgb { red, green, blue };
+inline rgb current = rgb::red;
+inline void set(rgb c)        { current = c; }
+inline rgb  get()              { return current; }
+inline void from_name(std::string_view) { /* ... */ }
+}
+```
+
+**🤖 `include/widget/detail/color.decls.hpp`** — generator emits:
+```cpp
+#pragma once
+#include <string_view>
+namespace widget::color {
+enum class rgb { red, green, blue };
+extern rgb current;
+void set(rgb);
+rgb  get();
+void from_name(std::string_view);
+}
+```
+
+**🤖 `src/color.cppm`** — generator emits:
+```cpp
+module;
+#include <widget/detail/color.decls.hpp>
+export module widget:color;
+export namespace widget::color {
+using ::widget::color::rgb;
+using ::widget::color::current;
+using ::widget::color::set;
+using ::widget::color::get;
+using ::widget::color::from_name;
+}
+```
+
+**🤖 `src/color_impl.cpp`** — generator emits:
+```cpp
+module;
+#include <widget/color.hpp>
+module widget;
+namespace {
+#if defined(__GNUC__) || defined(__clang__)
+[[gnu::used]]
+#endif
+[[maybe_unused]] const void* const _emit_color_symbols[] = {
+    reinterpret_cast<const void*>(static_cast<void(*)(widget::color::rgb)>(&widget::color::set)),
+    reinterpret_cast<const void*>(static_cast<widget::color::rgb(*)()>(&widget::color::get)),
+    reinterpret_cast<const void*>(static_cast<void(*)(std::string_view)>(&widget::color::from_name)),
+};
+}
+```
+
+**✏️ `src/widget.cppm`** — author writes this (two lines per area):
+```cpp
+export module widget;
+export import :color;
+export import :shape;
+```
+
+**✏️ `include/widget/widget.hpp`** — author writes this (one line per area):
+```cpp
+#pragma once
+#include <widget/color.hpp>
+#include <widget/shape.hpp>
+```
+
+`shape.hpp` and its generated counterparts follow the identical pattern.
+
+---
+
 ## What the author writes
 
 For each area of the library, **one file**:
@@ -74,6 +181,9 @@ module;
 module lib;
 
 namespace {
+#if defined(__GNUC__) || defined(__clang__)
+[[gnu::used]]
+#endif
 [[maybe_unused]] const void* const _emit_<area>_symbols[] = {
     reinterpret_cast<const void*>(static_cast<sig1>(&::lib::<area>::name1)),
     reinterpret_cast<const void*>(static_cast<sig2>(&::lib::<area>::name2)),
@@ -82,7 +192,7 @@ namespace {
 }
 ```
 
-The address-take array forces MSVC to emit the inline function bodies as out-of-line COMDAT symbols in the library's compiled `.lib`, satisfying `import`-only consumers at link time.
+The address-take array forces the compiler to emit the inline function bodies as out-of-line COMDAT symbols in the library's compiled archive, satisfying `import`-only consumers at link time. The `[[gnu::used]]` attribute (GCC/Clang only) prevents `-O2` from dead-code-eliminating the array; MSVC respects the address-take without it. See `MODULE_DUAL_MODE.md` for details.
 
 ---
 
