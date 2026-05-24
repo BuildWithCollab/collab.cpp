@@ -165,9 +165,30 @@ Concretely: a template lives in the inline header alongside the non-template con
 
 This is empirically verified — real libraries built on this architecture have non-trivial template surfaces (variadic templates, NTTP-by-reference templates over user types, std/fmt-style format-string templates) and they instantiate correctly from both `#include` and `import` paths.
 
+## `constexpr` and `consteval` functions
+
+These need the **same treatment as templates**: bodies stay visible everywhere, never get stripped.
+
+- **`constexpr`** functions can be evaluated at compile time *or* called at runtime. The runtime case is fine through the normal architecture (declaration in BMI, symbol emitted by the impl unit). The compile-time case requires the body to be reachable from the consumer's TU — stripping it to a forward declaration breaks any constant-expression context that calls the function.
+- **`consteval`** functions must be evaluated at compile time. No runtime symbol is needed (no calls survive to the link step) — but the body must be visible at every call site.
+
+In both cases: the decls header carries the **definition**, not just a declaration. The cppm re-exports the name via using-decl as for any other entity. The impl unit's force-emission array does NOT include `consteval` functions (no runtime symbol exists) and does not strictly need `constexpr` functions either (their bodies are reachable inline, so a consumer's runtime call inlines them rather than calling out to a `.lib` symbol — but including them does no harm).
+
+If the canonical file has `inline constexpr R foo(args) { body }`, the generator must recognize `constexpr` (and `consteval`) as body-preserving keywords and not strip the body — same rule as `template`.
+
+## Shared libraries (DLLs / .so)
+
+The architecture is verified for **static libraries** (`.lib`, `.a`). Shipping the same library as a shared library (DLL, dynamic library, shared object) is not covered by the verification and likely needs adjustment:
+
+- Exported symbols need `__declspec(dllexport)` (MSVC) or `__attribute__((visibility("default")))` (GCC/Clang) on their declarations to be visible across the DLL boundary. These attributes have to flow through the decls header AND the inline header consistently — if one path tags the symbol and the other doesn't, the symbol effectively splits across the boundary and consumers see "missing" exports.
+- The force-emission array in the impl unit interacts with dllexport in ways that haven't been tested here. The COMDAT emission may or may not get the dllexport attribute the consumer needs; this depends on whether the address-taken function's declaration carried the attribute.
+- Inline variable state (the namespace-scope `inline T g_state` pattern for shared singletons) is brittle across shared library boundaries because each DLL may end up with its own COMDAT instance rather than the linker folding to one. This is a general shared-library problem, not specific to modules — but the dual-mode architecture inherits it.
+
+If you need DLL support, plan on additional verification work: a fourth test binary built against a DLL build of the library, plus separate diamond tests for state coherence across the DLL boundary.
+
 ## What the verification does NOT cover
 
-- ABI stability across module/header switches. The patterns above target source-level coherence; if the library is consumed across compilation boundaries (DLLs, separately compiled static libs), additional ABI considerations apply.
+- ABI stability across module/header switches. The patterns above target source-level coherence; cross-compilation-unit ABI compatibility (e.g., a library built with one module shape consumed by code built against a different module shape) is not exercised.
 
 ## Verified compilers
 

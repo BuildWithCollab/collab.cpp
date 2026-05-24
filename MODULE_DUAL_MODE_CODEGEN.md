@@ -144,18 +144,21 @@ src/<area>_impl.cpp                     ← module impl unit
 
 ### 1. `include/lib/detail/<area>.decls.hpp`
 
-The canonical inline header with bodies stripped:
+The canonical inline header with bodies stripped — but only for plain `inline` functions. Any function whose declaration carries `constexpr`, `consteval`, or `template` keeps its body, because the body must remain visible at instantiation / constant evaluation.
 
 | Source line | Transformed to |
 |---|---|
 | `inline R foo(args...) { body }` | `R foo(args...);` |
 | `inline T name = value;` | `extern T name;` |
+| `inline constexpr R foo(args...) { body }` | **unchanged** (constexpr body must stay reachable) |
+| `inline consteval R foo(args...) { body }` | **unchanged** (consteval body must stay reachable) |
+| `template <...> R foo(args...) { body }` | **unchanged** (templates remain inline-visible) |
+| `template <...> struct/class S { ... };` | **unchanged** |
 | `enum class E { ... };` | unchanged |
 | `struct/class S { ... };` | unchanged |
-| `template <...>` (any) | unchanged (templates remain inline-visible) |
 | namespace open/close, comments, includes | unchanged |
 
-Result: a header containing every type definition the canonical file declares, every function signature, every variable declaration — and no bodies that could end up in the module's BMI.
+Result: a header containing every type definition the canonical file declares, every function signature, every variable declaration, plus the **full bodies of every template, `constexpr`, and `consteval` function** — and no bodies that could end up in the module's BMI for plain inline functions. See `MODULE_DUAL_MODE.md` for why templates and constexpr/consteval need body preservation.
 
 ### 2. `src/<area>.cppm`
 
@@ -205,7 +208,8 @@ The address-take array forces the compiler to emit the inline function bodies as
   export import :area2;
   ```
 - **The umbrella `include/lib.hpp`**: hand-written, `#include`s the per-area headers.
-- **Templates**: copied verbatim into the decls header — the generator does no transformation on template definitions. Templates work end-to-end through this architecture without special treatment; the IFC consumer ICE is specific to non-template inline function bodies, not templates. The decls header carries the full template body (templates must be inline at instantiation anyway), the cppm's using-decl re-exports the template name, and module consumers instantiate normally. See the templates section of `MODULE_DUAL_MODE.md`.
+- **Templates, `constexpr`, `consteval`**: copied verbatim into the decls header — the generator does no transformation on these. They work end-to-end through the architecture without special treatment; the IFC consumer ICE is specific to plain non-template inline function bodies, not these. The decls header carries the full body (must be visible at instantiation / constant evaluation), the cppm's using-decl re-exports the name, and consumers use them normally. See the templates and constexpr/consteval sections of `MODULE_DUAL_MODE.md`.
+- **DLL export attributes** (`__declspec(dllexport)`, visibility attributes). The generator targets static-library output. Shared-library builds need attribute decoration on declarations in both the inline header and the decls header consistently; the generator does not currently emit these, and the force-emission array's interaction with dllexport is unverified. See the shared-libraries section of `MODULE_DUAL_MODE.md`.
 - **The verification toggle**: project-level, separate from codegen. See `MODULE_DUAL_MODE.md`.
 
 ---
