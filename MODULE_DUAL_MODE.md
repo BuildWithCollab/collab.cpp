@@ -246,6 +246,48 @@ inline void _emit_S_members() {
 
 This forces the member function's address to be observed, which forces its symbol to be emitted. The static_cast disambiguates overloaded members. The function body itself never runs at runtime.
 
+## Macros do not cross the module boundary
+
+`import lib;` transports declarations and entities. It does **not** transport preprocessor macros. This is by design — modules deliberately isolate consumers from the preprocessor state of the imported unit — but it means a public-API macro defined in `<lib.hpp>` is invisible to `import`-only consumers.
+
+| Consumer | Sees `#define`d macros from `<lib.hpp>`? |
+|---|---|
+| `#include <lib.hpp>` only | yes |
+| `import lib;` only | **no** |
+| Both in same TU | yes (via the include path) |
+
+If `<lib.hpp>` defines `LIB_VERSION_MAJOR`, `LIB_FEATURE_X_ENABLED`, or a convenience macro like `LIB_LOG_ERROR(...)`, the import-only path silently lacks them. Code that uses these macros compiles fine for `#include` consumers, fails to compile for `import` consumers, and works "by accident" for dual consumers because the `#include` path happens to come first.
+
+**The recommended design rule: no macros in the public API.** Express the same intent with language-level constructs that *do* cross the module boundary:
+
+| Instead of | Use |
+|---|---|
+| `#define LIB_VERSION_MAJOR 3` | `inline constexpr int version_major = 3;` |
+| `#define LIB_FEATURE_X_ENABLED 1` | `inline constexpr bool feature_x_enabled = true;` |
+| `#define LIB_ASSERT(x) ...` | a function or function template that takes `std::source_location` |
+| Configuration macros (`#define LIB_USE_FOO`) | build-system options that switch the compiled implementation, not header content the consumer sees |
+
+This is the cleanest path. New libraries should treat "the public API contains a macro" as a smell.
+
+**For unavoidable macros**, keep them in a dedicated header that consumers are required to `#include` even when otherwise on the import path:
+
+```cpp
+// include/lib/macros.hpp
+#pragma once
+// Macros that cannot be expressed without the preprocessor live here.
+// import lib; consumers MUST also #include <lib/macros.hpp> to use these.
+#define LIB_LOG_ERROR(...) ::lib::log::error_at(__FILE__, __LINE__, __VA_ARGS__)
+```
+
+Document this prominently. The codegen doesn't help with macros — the canonical inline header should *not* define them (they'd silently disappear from the module path); the macros header is hand-maintained and consumed explicitly.
+
+The narrow cases where macros are genuinely unavoidable:
+- `__FILE__` / `__LINE__` / `__func__` capture at the call site (use `std::source_location` instead when possible — it works without a macro in C++20+).
+- Stringification (`#x`) and token-pasting (`##`) of the caller's source code.
+- Conditional compilation that depends on properties of the consumer's TU.
+
+For everything else — version numbers, feature flags, type traits, constants — language-level alternatives exist and are strictly better in this architecture.
+
 ## Module-on-module composition
 
 A library `lib` that builds on top of another modular library `other_lib` will typically have `import other_lib;` in `lib.cppm`'s purview. Two questions arise: does `using ::lib::name;` still work when `name`'s signature mentions `other_lib`-attached types, and how do consumers of `lib` see those types?
