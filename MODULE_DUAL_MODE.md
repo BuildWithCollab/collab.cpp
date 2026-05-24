@@ -203,6 +203,71 @@ In both cases: the decls header carries the **definition**, not just a declarati
 
 If the canonical file has `inline constexpr R foo(args) { body }`, the generator must recognize `constexpr` (and `consteval`) as body-preserving keywords and not strip the body — same rule as `template`.
 
+## Class member functions
+
+The decls header carries class type definitions. Classes routinely have member functions, and how those member functions are written determines where their bodies live in this architecture.
+
+**In-class definitions are kept verbatim in the decls header.** Methods defined inside the class body — defaulted special members, single-line accessors, simple ctors with member-init lists — are implicitly inline but tied to the class entity. MSVC's BMI carries them without triggering the IFC consumer ICE. The ICE that motivates the whole pattern is specific to **namespace-scope** inline function bodies; class-body-inline methods are not affected. Empirically, the architecture works with classes that have defaulted virtual destructors, pure-virtual member functions, simple accessors, and small constructors all defined in-class.
+
+**Out-of-class `inline` member definitions follow the free-function pattern.** When the canonical inline header has:
+
+```cpp
+struct S {
+    std::string bundle_id() const;   // declared in-class
+    // ...
+};
+
+inline std::string S::bundle_id() const {   // defined out-of-class, inline
+    // ... body
+}
+```
+
+…the out-of-class `inline` definition is a namespace-scope inline function for the purposes of the IFC consumer ICE. Treat it identically to a free function:
+- decls header: keep the in-class declaration, strip the out-of-class definition
+- inline header: keep the out-of-class inline definition (this is what header consumers compile against)
+- impl unit: include the inline header, force emission so the symbol lands in the `.lib`
+
+**Practical guidance:** keep in-class definitions to trivial things (defaulted/= 0 special members, one-line accessors). Anything substantial moves out-of-class with `inline`, and gets the same treatment as a free function.
+
+**Force-emission of member functions** uses pointer-to-member types, not regular function pointers. Pointer-to-member sizes and layouts differ from regular function pointers; do **not** `reinterpret_cast` them to `void*` (UB on most platforms and almost certainly broken on MSVC for virtual or multi-inherited classes). The simplest portable shape is a static function that ODR-uses each member address:
+
+```cpp
+namespace {
+#if defined(__GNUC__) || defined(__clang__)
+[[gnu::used]]
+#endif
+[[maybe_unused]]
+inline void _emit_S_members() {
+    (void)static_cast<std::string (S::*)() const>(&S::bundle_id);
+    // ... one ODR-use per out-of-class inline member
+}
+}
+```
+
+This forces the member function's address to be observed, which forces its symbol to be emitted. The static_cast disambiguates overloaded members. The function body itself never runs at runtime.
+
+## Module-on-module composition
+
+A library `lib` that builds on top of another modular library `other_lib` will typically have `import other_lib;` in `lib.cppm`'s purview. Two questions arise: does `using ::lib::name;` still work when `name`'s signature mentions `other_lib`-attached types, and how do consumers of `lib` see those types?
+
+**The using-decl re-export trick holds.** A using-declaration is name-based per `[namespace.udecl]`; the type completeness of the function's signature is established at the function's declaration point (in the decls header). By the time the cppm processes `using ::lib::name;`, the function's signature — including any `other_lib`-attached types it mentions — is already fully formed. The using-decl carries the function entity through unchanged, regardless of which module the parameter or return types are attached to. This is the standard behavior; no compiler has been observed treating this case specially.
+
+**But the consumer of `lib` needs the upstream types visible.** Re-exporting `lib::name` does not automatically re-export the upstream types its signature mentions. A consumer that calls `lib::name(some_other_lib_value)` needs `other_lib::SomeType` to be a known type in their TU. Two ways to provide that:
+
+```cpp
+// Option A: lib.cppm forwards the upstream import.
+export import other_lib;
+
+// Option B: lib.cppm re-exports specific types from upstream.
+export namespace lib {
+    using ::other_lib::SomeType;
+}
+```
+
+Option A is the simpler "everything `lib` depends on, you also have" stance — appropriate when `other_lib` is a foundational dependency. Option B is finer-grained — only the specific types `lib` uses in its surface bubble up.
+
+**Reachability quirks to watch for.** When you chain `export import` across several layers (`lib_a` re-exports `lib_b`, which re-exports `lib_c`), MSVC has had occasional bugs with deeply-chained reachability — types reach correctly but their members or nested types sometimes don't. If you build on a stack of modular libraries, add an import-only test in `lib_a` that constructs and uses `lib_c::DeepType` to verify the chain holds.
+
 ## Shared libraries (DLLs / .so)
 
 The architecture is verified for **static libraries** (`.lib`, `.a`). Shipping the same library as a shared library (DLL, dynamic library, shared object) is not covered by the verification and likely needs adjustment:
