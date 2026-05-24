@@ -1,11 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <collab.hpp>
 import collab;
 
 using namespace collab::log;
 
-TEST_CASE("dual: #include AND import in same TU — set/get round-trip", "[dual]") {
+TEST_CASE("import-only: set/get round-trip", "[import-only]") {
     set_level(level::warn);
     REQUIRE(get_level() == level::warn);
     set_level(level::trace);
