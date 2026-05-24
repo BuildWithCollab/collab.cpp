@@ -9,11 +9,14 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <fmt/format.h>
 
 import collab;
 
