@@ -157,9 +157,16 @@ This is what verifies the `inline` namespace-scope variable is actually being CO
 
 ---
 
+## Templates
+
+Templates work in this architecture without special treatment. The IFC consumer ICE that motivates the whole pattern is specific to **non-template inline function bodies** crossing the BMI. Template definitions are not affected — module reachability handles them correctly, and MSVC's BMI consumer parses template definitions without ICEing.
+
+Concretely: a template lives in the inline header alongside the non-template content. The decls header carries the template **definition** (not just a forward declaration) — templates must be visible at instantiation, so the body has to remain reachable. The cppm's `using ::lib::tmpl_name;` re-exports the template the same way it re-exports a non-template name. Module consumers instantiate the template normally; the body is reachable through the using-decl chain.
+
+This is empirically verified — real libraries built on this architecture have non-trivial template surfaces (variadic templates, NTTP-by-reference templates over user types, std/fmt-style format-string templates) and they instantiate correctly from both `#include` and `import` paths.
+
 ## What the verification does NOT cover
 
-- Templates exported through the BMI. Templates must be visible at instantiation; this is a separate problem from non-template inline functions and may need additional architectural treatment.
 - ABI stability across module/header switches. The patterns above target source-level coherence; if the library is consumed across compilation boundaries (DLLs, separately compiled static libs), additional ABI considerations apply.
 
 ## Verified compilers

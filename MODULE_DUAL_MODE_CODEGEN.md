@@ -205,7 +205,7 @@ The address-take array forces the compiler to emit the inline function bodies as
   export import :area2;
   ```
 - **The umbrella `include/lib.hpp`**: hand-written, `#include`s the per-area headers.
-- **Templates**: copied verbatim to the decls header (templates must remain inline-visible). The generator does no transformation on template definitions. If a complex template triggers an IFC ICE, the project must handle it out-of-band (e.g., keep the template header-only-consumer-accessible only).
+- **Templates**: copied verbatim into the decls header — the generator does no transformation on template definitions. Templates work end-to-end through this architecture without special treatment; the IFC consumer ICE is specific to non-template inline function bodies, not templates. The decls header carries the full template body (templates must be inline at instantiation anyway), the cppm's using-decl re-exports the template name, and module consumers instantiate normally. See the templates section of `MODULE_DUAL_MODE.md`.
 - **The verification toggle**: project-level, separate from codegen. See `MODULE_DUAL_MODE.md`.
 
 ---
