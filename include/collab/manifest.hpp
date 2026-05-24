@@ -1,0 +1,21 @@
+#pragma once
+
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <collab/identifier.hpp>
+#include <collab/semver.hpp>
+
+namespace collab {
+
+// Project manifest: identifier plus descriptive metadata.
+struct manifest {
+    collab::identifier         identifier;
+    semver                     version;
+    std::optional<std::string> description;
+    std::vector<std::string>   authors;
+    std::optional<std::string> license;  // SPDX identifier, e.g. "0BSD"
+};
+
+}  // namespace collab

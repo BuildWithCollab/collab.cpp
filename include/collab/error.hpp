@@ -1,0 +1,23 @@
+#pragma once
+
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include <fmt/format.h>
+
+namespace collab {
+
+struct error : std::runtime_error {
+    using std::runtime_error::runtime_error;  // const char*, const std::string&
+
+    explicit error(std::string_view msg)
+        : std::runtime_error(std::string(msg)) {}
+
+    template <typename... Args>
+    explicit error(fmt::format_string<Args...> fmt_str, Args&&... args)
+        : std::runtime_error(fmt::format(fmt_str, std::forward<Args>(args)...)) {}
+};
+
+}  // namespace collab
