@@ -20,6 +20,17 @@ set_defaultmode("release")
 set_languages("c++23")
 set_policy("build.c++.modules", true)
 
+-- gcc < 15 needs the cxx11 ABI explicitly forced across module TUs, or
+-- `import`-only consumers fail to link against libstdc++-using static libs
+-- (e.g. Catch2) with std::string / std::ostream symbol mismatches.
+if is_plat("linux") then
+    local cxx = get_config("cxx") or ""
+    local major = cxx:match("g%+%+%-(%d+)")
+    if major and tonumber(major) < 15 then
+        set_policy("build.c++.modules.gcc.cxx11abi", true)
+    end
+end
+
 add_requires("fmt")
 add_requires("spdlog")
 add_requires("rang")
