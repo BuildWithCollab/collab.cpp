@@ -31,20 +31,16 @@ Everything lives under `collab::` (types, error, publisher), `collab::log::` (lo
 
 ## `#include <collab.hpp>` vs `import collab;`
 
-| Feature                                                            | `#include <collab.hpp>` | `import collab;` |
-| ------------------------------------------------------------------ | :--------------------------: | :--------------: |
-| `identifier`, `manifest`, `semver`                                 | ✅                           | ✅               |
-| `publisher`, `subscription`                                        | ✅                           | ✅               |
-| `collab::error` (base + library-subclass pattern)                  | ✅                           | ✅               |
-| `collab::log::level`, `sink`, custom sink subclasses               | ✅                           | ✅               |
-| `collab::log::set_level` / `get_level` / `add_sink` / `clear_sinks` | ✅                           | ✅               |
-| `collab::log::trace`…`critical` (untagged, tagged, fmt-style)      | ✅                           | ✅               |
-| `collab::log::logger<I>` (compile-time-bound library logger)       | ✅                           | ✅               |
-| `collab::term::color` / `style` enums and `fg::*` constants        | ✅                           | ✅               |
-| `collab::log::make_*_sink` (spdlog-backed factories)               | ❌                           | ✅               |
-| `collab::term::operator<<` (rang-backed ANSI output)               | ❌                           | ✅               |
+| Feature                                                  | `#include <collab.hpp>` | `import collab;` |
+| -------------------------------------------------------- | :---------------------: | :--------------: |
+| [Identifier and manifest](#identifier-and-manifest)      | ✅                      | ✅               |
+| [Semantic versioning](#semantic-versioning)              | ✅                      | ✅               |
+| [Errors](#errors)                                        | ✅                      | ✅               |
+| [Publishers](#publishers)                                | ✅                      | ✅               |
+| [Logging](#logging)                                      | ⚠️                      | ✅               |
+| [Terminal styling](#terminal-styling)                    | ⚠️                      | ✅               |
 
-> ✅ available &nbsp;·&nbsp; ❌ not available
+✅ available · ⚠️ partial · ❌ not available
 
 ---
 
@@ -193,6 +189,10 @@ assert(v.to_string() == "1.2.0-rc.1");
 
 ## Logging
 
+> ⚠️ **Header-only consumers** get the full API and subclass `collab::log::sink` to provide output.
+>
+> The built-in `make_*_sink` factories below are the only piece that needs the linked impl.
+
 Library code never deals with sinks — it just calls `log::info(...)` (see [Library conventions](#library-conventions)). The **application** at the top of the stack is responsible for installing sinks, choosing the level, and deciding where output ends up.
 
 ```cpp
@@ -313,6 +313,10 @@ Convention (not enforced): only the owning class publishes.
 ---
 
 ## Terminal styling
+
+> ⚠️ **Header-only consumers** get the color/style enums and `fg::*` constants.
+>
+> Streaming them with `operator<<` needs the linked impl.
 
 Streaming manipulators for ANSI colors and styles, scoped under `collab::term`. Output is automatically suppressed when stdout/stderr isn't a TTY, when `NO_COLOR` is set, or when piped.
 
