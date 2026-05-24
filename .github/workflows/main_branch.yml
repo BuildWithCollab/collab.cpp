@@ -23,8 +23,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "macOS · Apple Clang"
+          - name: "macOS · Apple Clang (headeronly)"
             os: macos-latest
+            test_cmd: "xmake run tests-include"
           - name: "macOS · Clang 21"
             os: macos-latest
             toolchain: llvm
@@ -103,7 +104,7 @@ jobs:
         run: xmake build -a
 
       - name: Run tests
-        run: xmake test -v
+        run: ${{ matrix.test_cmd || 'xmake test -v' }}
 
       - name: Notify Slack on Failure
         if: failure()
