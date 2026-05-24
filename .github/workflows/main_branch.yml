@@ -25,6 +25,7 @@ jobs:
         include:
           - name: "macOS · Apple Clang (headeronly)"
             os: macos-latest
+            build_cmd: "xmake build tests-include"
             test_cmd: "xmake run tests-include"
           - name: "macOS · Clang 21"
             os: macos-latest
@@ -101,7 +102,7 @@ jobs:
         run: xmake config -y
 
       - name: Build
-        run: xmake build -a
+        run: ${{ matrix.build_cmd || 'xmake build -a' }}
 
       - name: Run tests
         run: ${{ matrix.test_cmd || 'xmake test -v' }}
