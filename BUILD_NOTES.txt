@@ -1,0 +1,14 @@
+Reference config commands (run once per session; -y is mandatory)
+
+Windows:
+  xmake f --qt=C:/qt/6.10.2/msvc2022_64 -m release -p windows -a x64 -c -y
+
+Linux / GCC 15 (release):
+  xmake f -c -y --cc=gcc-15 --cxx=g++-15 --ld=g++-15 --sh=g++-15 -m release
+
+Linux / Clang + libc++ (release):
+  xmake f -c -y --cc=clang --cxx=clang++ --ld=clang++ --sh=clang++ \
+    --cxxflags="-stdlib=libc++" --ldflags="-stdlib=libc++"
+
+macOS / brew LLVM (release):
+  xmake f -c -y --toolchain=llvm --sdk="$(brew --prefix llvm)"

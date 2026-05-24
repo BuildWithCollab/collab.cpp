@@ -1,22 +1,3 @@
--- ─────────────────────────────────────────────────────────────────────────────
--- Reference config commands (run once per session; -y is mandatory)
---
--- Windows:
---   xmake f --qt=C:/qt/6.10.2/msvc2022_64 -m release -p windows -a x64 -c -y
---
--- Linux / GCC 15 (release):
---   xmake f -c -y --cc=gcc-15 --cxx=g++-15 --ld=g++-15 --sh=g++-15 -m release
---
--- Linux / Clang + libc++ (release):
---   xmake f -c -y --cc=clang --cxx=clang++ --ld=clang++ --sh=clang++ \
---     --cxxflags="-stdlib=libc++" --ldflags="-stdlib=libc++"
---
--- macOS / brew LLVM (release):
---   xmake f -c -y --toolchain=llvm --sdk="$(brew --prefix llvm)"
--- ─────────────────────────────────────────────────────────────────────────────
-
-add_repositories("BuildWithCollab https://github.com/BuildWithCollab/Packages")
-
 add_rules("mode.release")
 set_defaultmode("release")
 
@@ -24,10 +5,29 @@ set_languages("c++23")
 set_policy("build.c++.modules", true)
 set_policy("build.c++.modules.gcc.cxx11abi", true)
 
-add_requires("fmt")
-add_requires("spdlog")
-add_requires("rang")
-add_requires("catch2")
+option("header_only")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Install header-only library")
+option_end()
+
+option("build_tests")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Build test targets")
+option_end()
+
+if get_config("header_only") then
+    add_requires("fmt", { configs = { header_only = true } })
+else
+    add_requires("fmt")
+    add_requires("spdlog")
+    add_requires("rang")
+end
+
+if get_config("build_tests") then
+    add_requires("catch2")
+end
 
 if is_plat("windows") then
     add_cxxflags("/utf-8", { public = true })
@@ -38,15 +38,23 @@ end
 -- (src/<area>.cppm), the generated force-emission impl units
 -- (src/<area>_impl.cpp), the umbrella src/collab.cppm, and the hand-written
 -- native impl files (src/<area>_native.cpp).
-target("collab")
-    set_kind("static")
-    add_files("src/**.cpp")
-    add_files("src/**.cppm", { public = true })
-    add_includedirs("include", { public = true })
-    add_packages("fmt", { public = true })
-    add_packages("spdlog")
-    add_packages("rang")
-target_end()
+if get_config("header_only") then
+    target("collab")
+        set_kind("headeronly")
+        add_includedirs("include", { public = true })
+        add_packages("fmt", { public = true })
+    target_end()
+else
+    target("collab")
+        set_kind("static")
+        add_files("src/**.cpp")
+        add_files("src/**.cppm", { public = true })
+        add_includedirs("include")
+        add_packages("fmt", { public = true })
+        add_packages("spdlog")
+        add_packages("rang")
+    target_end()
+end
 
 -- ─── Tests ──────────────────────────────────────────────────────────────────
 -- tests-include: pure header-only — does NOT link `collab`. Exercises only
@@ -63,23 +71,25 @@ target("tests-include")
     add_tests("default", {runargs = {"--durations", "yes"}})
 target_end()
 
--- tests-import: `import collab;` only, links the static library.
-target("tests-import")
-    set_kind("binary")
-    add_files("tests/test_import_only.cpp")
-    add_deps("collab")
-    add_packages("catch2")
-    set_rundir("$(projectdir)")
-    add_tests("default", {runargs = {"--durations", "yes"}})
-target_end()
+if not get_config("header_only") then
+    -- tests-import: `import collab;` only, links the static library.
+    target("tests-import")
+        set_kind("binary")
+        add_files("tests/test_import_only.cpp")
+        add_deps("collab")
+        add_packages("catch2")
+        set_rundir("$(projectdir)")
+        add_tests("default", {runargs = {"--durations", "yes"}})
+    target_end()
 
--- tests-dual: both `#include <collab.hpp>` AND `import collab;` in the same TU.
--- The architecture's load-bearing test.
-target("tests-dual")
-    set_kind("binary")
-    add_files("tests/test_dual.cpp")
-    add_deps("collab")
-    add_packages("catch2")
-    set_rundir("$(projectdir)")
-    add_tests("default", {runargs = {"--durations", "yes"}})
-target_end()
+    -- tests-dual: both `#include <collab.hpp>` AND `import collab;` in the same TU.
+    -- The architecture's load-bearing test.
+    target("tests-dual")
+        set_kind("binary")
+        add_files("tests/test_dual.cpp")
+        add_deps("collab")
+        add_packages("catch2")
+        set_rundir("$(projectdir)")
+        add_tests("default", {runargs = {"--durations", "yes"}})
+    target_end()
+end
