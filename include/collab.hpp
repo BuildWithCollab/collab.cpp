@@ -5,6 +5,7 @@
 // mode and apply the right conditional compilation.
 #define COLLAB_HEADER_INCLUDED 1
 
+#include <collab/atomic_file_writer.hpp>
 #include <collab/error.hpp>
 #include <collab/fixed_string.hpp>
 #include <collab/identifier.hpp>

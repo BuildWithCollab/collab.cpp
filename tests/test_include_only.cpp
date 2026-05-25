@@ -4,7 +4,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,3 +24,4 @@
 #include "common/test_log.inc"
 #include "common/test_error.inc"
 #include "common/test_term.inc"
+#include "common/test_atomic_file_writer.inc"

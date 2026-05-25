@@ -6,12 +6,14 @@
 // Std headers used by tests must be included BEFORE `import collab;` —
 // re-including a std header after the module's GMF already processed it
 // triggers MSVC C7571/C2766 (duplicate variable-template specializations).
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,6 +30,7 @@ import collab;
 #include "common/test_log.inc"
 #include "common/test_error.inc"
 #include "common/test_term.inc"
+#include "common/test_atomic_file_writer.inc"
 
 #include "extended/test_log_sinks.inc"
 #include "extended/test_term_ostream.inc"

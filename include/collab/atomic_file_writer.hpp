@@ -1,0 +1,223 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include <collab/error.hpp>
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 💾 collab::atomic_file_writer — durable, atomic file replacement primitive.
+//
+// Writes go to a sibling temp file; commit() flushes the temp to disk and then
+// atomically renames temp → target. If the writer is destroyed without
+// commit(), the temp is discarded and the target is untouched. If commit()
+// returned, the data is on the platter at the target path.
+//
+// Durability recipe
+// ─────────────────
+//   POSIX  : open temp → write → fsync(temp_fd) → rename → fsync(parent_dir_fd)
+//   Windows: CreateFileW temp → WriteFile → FlushFileBuffers → CloseHandle →
+//            MoveFileExW with MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH
+//
+// Failures throw a type from collab::errors::atomic_file_write::*. Each leaf
+// carries the user-facing target path and the OS error code. Catch a leaf to
+// act on a specific condition; catch collab::errors::atomic_file_write::error
+// for any AFW failure; catch collab::error for any collab error.
+//
+// Read-only target detection happens at construction so no temp is created
+// for a file the user has marked read-only.
+//
+// Mode/owner/group of an existing target are copied onto the new file before
+// rename so an overwrite preserves attributes.
+//
+// Symlink targets are replaced with a regular file (standard rename(2)
+// behavior). No follow-symlink flag.
+//
+// Cross-filesystem rename returns EXDEV on POSIX (or the Windows equivalent
+// from MoveFileExW). By default this throws; opt-in via
+// set_direct_write_fallback(true) falls back to a direct write of the target,
+// trading atomicity for the ability to write across filesystems.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace collab::errors::atomic_file_write {
+
+// Family base — catch this for "any atomic file write failure." Protected
+// ctor so direct `throw error{...}` isn't possible; throw a leaf type below.
+struct error : collab::error {
+    std::filesystem::path target;
+    int                   os_error;   // errno / GetLastError(); 0 when policy-derived
+
+protected:
+    error(std::filesystem::path t, int e, std::string_view condition)
+        : collab::error("atomic file write to {} failed: {} (os error {})",
+                        t.string(), condition, e)
+        , target(std::move(t))
+        , os_error(e) {}
+};
+
+struct target_read_only : error {
+    explicit target_read_only(std::filesystem::path t)
+        : error(std::move(t), 0, "target is read-only") {}
+};
+
+struct create_temp_failed : error {
+    create_temp_failed(std::filesystem::path t, int e)
+        : error(std::move(t), e, "creating temp file") {}
+};
+
+struct write_failed : error {
+    write_failed(std::filesystem::path t, int e)
+        : error(std::move(t), e, "writing temp file") {}
+};
+
+struct fsync_temp_failed : error {
+    fsync_temp_failed(std::filesystem::path t, int e)
+        : error(std::move(t), e, "flushing temp file to disk") {}
+};
+
+struct permission_copy_failed : error {
+    permission_copy_failed(std::filesystem::path t, int e)
+        : error(std::move(t), e, "copying target permissions to temp") {}
+};
+
+struct cross_filesystem : error {
+    cross_filesystem(std::filesystem::path t, int e)
+        : error(std::move(t), e, "target is on a different filesystem from temp") {}
+};
+
+struct rename_failed : error {
+    rename_failed(std::filesystem::path t, int e)
+        : error(std::move(t), e, "renaming temp to target") {}
+};
+
+struct direct_write_failed : error {
+    direct_write_failed(std::filesystem::path t, int e)
+        : error(std::move(t), e, "writing target directly (fallback path)") {}
+};
+
+struct fsync_parent_dir_failed : error {
+    fsync_parent_dir_failed(std::filesystem::path t, int e)
+        : error(std::move(t), e, "flushing parent directory metadata") {}
+};
+
+}  // namespace collab::errors::atomic_file_write
+
+namespace collab::detail {
+
+// Sentinel value usable for both POSIX (fd as intptr_t) and Windows
+// (INVALID_HANDLE_VALUE is -1 reinterpreted as a pointer).
+inline constexpr std::intptr_t atomic_file_writer_invalid_handle = -1;
+
+}  // namespace collab::detail
+
+// Platform-specific inline implementations of the detail:: free functions
+// that the class body below calls. Selected by a single #ifdef so consumers
+// never see platform macros leak out of the detail header (forward-declared
+// Win32 prototypes; no <windows.h>).
+#if defined(_WIN32)
+#  include <collab/detail/atomic_file_writer.windows.hpp>
+#else
+#  include <collab/detail/atomic_file_writer.posix.hpp>
+#endif
+
+namespace collab {
+
+class atomic_file_writer {
+public:
+    explicit atomic_file_writer(std::filesystem::path target)
+        : target_(std::move(target))
+    {
+        detail::atomic_file_writer_check_target_writable(target_);
+        temp_   = detail::atomic_file_writer_make_temp_path(target_);
+        handle_ = detail::atomic_file_writer_open_temp(target_, temp_);
+    }
+
+    ~atomic_file_writer() {
+        if (!committed_ && handle_ != detail::atomic_file_writer_invalid_handle) {
+            detail::atomic_file_writer_close(handle_);
+            detail::atomic_file_writer_remove_quietly(temp_);
+        }
+    }
+
+    atomic_file_writer(const atomic_file_writer&)            = delete;
+    atomic_file_writer& operator=(const atomic_file_writer&) = delete;
+
+    atomic_file_writer(atomic_file_writer&& other) noexcept
+        : target_(std::move(other.target_))
+        , temp_(std::move(other.temp_))
+        , handle_(other.handle_)
+        , committed_(other.committed_)
+        , fallback_(other.fallback_)
+    {
+        other.handle_    = detail::atomic_file_writer_invalid_handle;
+        other.committed_ = true;
+    }
+
+    atomic_file_writer& operator=(atomic_file_writer&& other) noexcept {
+        if (this != &other) {
+            if (!committed_ && handle_ != detail::atomic_file_writer_invalid_handle) {
+                detail::atomic_file_writer_close(handle_);
+                detail::atomic_file_writer_remove_quietly(temp_);
+            }
+            target_          = std::move(other.target_);
+            temp_            = std::move(other.temp_);
+            handle_          = other.handle_;
+            committed_       = other.committed_;
+            fallback_        = other.fallback_;
+            other.handle_    = detail::atomic_file_writer_invalid_handle;
+            other.committed_ = true;
+        }
+        return *this;
+    }
+
+    void write(std::span<const std::byte> bytes) {
+        if (committed_) return;
+        detail::atomic_file_writer_write(handle_, target_, bytes);
+    }
+
+    void write(std::string_view bytes) {
+        write(std::span<const std::byte>(
+            reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()));
+    }
+
+    void commit() {
+        if (committed_) return;
+        detail::atomic_file_writer_fsync(handle_, target_);
+        detail::atomic_file_writer_close(handle_);
+        handle_ = detail::atomic_file_writer_invalid_handle;
+        detail::atomic_file_writer_preserve_attributes(target_, temp_);
+        detail::atomic_file_writer_atomic_replace(temp_, target_, fallback_);
+        detail::atomic_file_writer_fsync_parent_dir(target_);
+        committed_ = true;
+    }
+
+    void set_direct_write_fallback(bool enabled) noexcept { fallback_ = enabled; }
+    bool direct_write_fallback() const noexcept           { return fallback_; }
+    const std::filesystem::path& target() const noexcept  { return target_; }
+
+private:
+    std::filesystem::path target_;
+    std::filesystem::path temp_;
+    std::intptr_t         handle_    = detail::atomic_file_writer_invalid_handle;
+    bool                  committed_ = false;
+    bool                  fallback_  = false;
+};
+
+inline void atomic_file_write(std::filesystem::path target, std::span<const std::byte> bytes) {
+    atomic_file_writer w{std::move(target)};
+    w.write(bytes);
+    w.commit();
+}
+
+inline void atomic_file_write(std::filesystem::path target, std::string_view bytes) {
+    atomic_file_write(std::move(target),
+        std::span<const std::byte>(
+            reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()));
+}
+
+}  // namespace collab

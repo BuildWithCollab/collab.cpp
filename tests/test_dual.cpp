@@ -7,12 +7,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,6 +32,7 @@ import collab;
 #include "common/test_log.inc"
 #include "common/test_error.inc"
 #include "common/test_term.inc"
+#include "common/test_atomic_file_writer.inc"
 
 #include "extended/test_log_sinks.inc"
 #include "extended/test_term_ostream.inc"
