@@ -1,6 +1,6 @@
 # collab-core 🏴‍☠️
 
-C++23 library for the **Collab** stack. Provides identifier and manifest types, semantic versioning, structured logging with per-library attribution, a thread-safe multi-subscriber publisher, ANSI terminal styling, and a base exception type.
+C++23 library for the **Collab** stack.
 
 ---
 
@@ -14,6 +14,7 @@ C++23 library for the **Collab** stack. Provides identifier and manifest types, 
 - [Errors](#errors)
 - [Publishers](#publishers)
 - [Terminal styling](#terminal-styling)
+- [Fixed string](#fixed-string)
 - [License](#license)
 
 ---
@@ -39,21 +40,25 @@ Everything lives under `collab::` (types, error, publisher), `collab::log::` (lo
 | [Publishers](#publishers)                                | ✅                      | ✅               |
 | [Logging](#logging)                                      | ⚠️                      | ✅               |
 | [Terminal styling](#terminal-styling)                    | ⚠️                      | ✅               |
+| [Fixed string](#fixed-string)                            | ✅                      | ✅               |
 
 ✅ available · ⚠️ partial · ❌ not available
 
-### MSVC VS2022 note
+### Compilers requiring `#include` alongside `import`
 
-On MSVC VS2022, `import collab;` alone does **not** surface the `std::hash` / `std::formatter` / `fmt::formatter` specializations for `fixed_string` to the importer translation unit. If you only `import` the library on VS2022 and then call `std::format("{}", fs)` or `std::hash<collab::fixed_string<N>>{}(fs)`, you'll get a compile error.
-
-Workaround: add `#include <collab.hpp>` alongside the import (order doesn't matter):
+On some older toolchains `import collab;` alone is not sufficient — the module's GMF doesn't surface certain declarations to importer translation units. On these compilers, add `#include <collab.hpp>` alongside the import (order doesn't matter):
 
 ```cpp
 #include <collab.hpp>
 import collab;
 ```
 
-VS2026, Clang, and GCC 15+ lift this limitation — `import collab;` alone is enough on those toolchains.
+Affected compilers and what fails without the include:
+
+- **MSVC VS2022** — the `std::hash` / `std::formatter` / `fmt::formatter` specializations for `fixed_string` aren't visible. Calling `std::format("{}", fs)` or `std::hash<collab::fixed_string<N>>{}(fs)` fails to compile.
+- **GCC 14** — namespace-scope deduction guides aren't visible. Writing `collab::fixed_string s = "hello"` or any other CTAD on `basic_fixed_string` fails to compile.
+
+VS2026, Clang, and GCC 15+ have neither limitation — `import collab;` alone is enough on those toolchains.
 
 ---
 
@@ -341,6 +346,29 @@ std::cout << bold << fg::green << "ok " << reset_style << reset_color
 ```
 
 Foreground colors live under `collab::term::fg::` — `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`. Styles live directly under `collab::term::` — `bold`, `dim`, `italic`, `underline`, `blink`, `reversed`, `crossed`. Reset with `reset_color` and `reset_style`.
+
+---
+
+## Fixed string
+
+`collab::basic_fixed_string<CharT, N, Traits>` is a literal class wrapping a fixed-size character array, usable as a non-type template parameter. Mirrors [P3094](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3094r4.html) `std::basic_fixed_string` so consuming code becomes a `using` alias to `std::` once that lands. `N` is the meaningful length; storage is `CharT[N + 1]`.
+
+The `char` alias is `collab::fixed_string<N>`. Parallel aliases exist for the other character types: `fixed_u8string<N>`, `fixed_u16string<N>`, `fixed_u32string<N>`, `fixed_wstring<N>`.
+
+```cpp
+constexpr collab::fixed_string s = "hello";   // fixed_string<5>
+static_assert(s.size == 5);
+static_assert(s == "hello");
+
+template <collab::basic_fixed_string Tag>
+struct tagged {
+    static constexpr std::string_view name() { return Tag.view(); }
+};
+
+using greeting = tagged<"hello">;
+```
+
+Implicit conversion to `std::string_view` covers most consumption patterns. `std::hash`, `std::formatter`, and `fmt::formatter` specializations let it interoperate with the standard library and fmt directly — see the [compiler note](#compilers-requiring-include-alongside-import) for the import-only path on VS2022 and GCC 14.
 
 ---
 
