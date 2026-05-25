@@ -13,6 +13,7 @@ C++23 library for the **Collab** stack.
 - [Logging](#logging)
 - [Errors](#errors)
 - [Publishers](#publishers)
+- [Atomic file writer](#atomic-file-writer)
 - [Terminal styling](#terminal-styling)
 - [Fixed string](#fixed-string)
 - [License](#license)
@@ -38,6 +39,7 @@ Everything lives under `collab::` (types, error, publisher), `collab::log::` (lo
 | [Semantic versioning](#semantic-versioning)              | ✅                      | ✅               |
 | [Errors](#errors)                                        | ✅                      | ✅               |
 | [Publishers](#publishers)                                | ✅                      | ✅               |
+| [Atomic file writer](#atomic-file-writer)                | ✅                      | ✅               |
 | [Logging](#logging)                                      | ⚠️                      | ✅               |
 | [Terminal styling](#terminal-styling)                    | ⚠️                      | ✅               |
 | [Fixed string](#fixed-string)                            | ✅                      | ✅               |
@@ -327,6 +329,66 @@ Convention (not enforced): only the owning class publishes.
 ⚠️ **Qt thread affinity.** If a worker thread publishes and a handler touches a `QObject` / `QWidget`, you'll trip Qt's thread-affinity rules (assertion, crash, or scrambled UI). The `publisher` does no marshalling. If you need GUI-thread dispatch, do it inside the handler — e.g. `QMetaObject::invokeMethod(target, fn, Qt::QueuedConnection)`.
 
 ⚠️ **Move-only argument types are not supported.** `publisher<std::unique_ptr<T>>` and similar will not compile. Broadcasting requires passing each subscriber its own copy of the arguments, which move-only types can't satisfy. Pass by `const T&` or `std::shared_ptr<T>` instead.
+
+---
+
+## Atomic file writer
+
+Durable, atomic file replacement. Writes go to a sibling temp file; `commit()` flushes to disk and atomically renames temp → target. If the writer is destroyed without `commit()`, the temp is discarded and the target is untouched. If `commit()` returned, the data is on the platter at the target path.
+
+```cpp
+namespace collab {
+    // Convenience: single blob, one call.
+    void atomic_file_write(std::filesystem::path target, std::span<const std::byte> bytes);
+    void atomic_file_write(std::filesystem::path target, std::string_view bytes);
+
+    class atomic_file_writer {
+    public:
+        // Throws `target_read_only` if the existing file is read-only (no temp created).
+        // On overwrite, mode/owner of the existing target are preserved onto the new file.
+        // A symlink target is replaced with a regular file (rename(2) semantics).
+        explicit atomic_file_writer(std::filesystem::path target);
+
+        void write(std::span<const std::byte> bytes);
+        void write(std::string_view bytes);
+
+        // POSIX:   fsync(temp) → rename → fsync(parent_dir).
+        // Windows: FlushFileBuffers + MoveFileExW(REPLACE_EXISTING | WRITE_THROUGH).
+        // Throws on failure.
+        void commit();
+
+        // Opt-in: if the rename would cross filesystems, fall back to copy+remove
+        // (atomicity guarantee waived). Off by default — throws `cross_filesystem`
+        // when off and a cross-fs rename is needed.
+        void set_direct_write_fallback(bool enabled) noexcept;
+    };
+}
+```
+
+Free function for a single blob; class form for incremental writes built up in pieces.
+
+### Errors
+
+Every failure throws a type from `collab::errors::atomic_file_write::*`. All leaves derive from `collab::errors::atomic_file_write::error` and carry two fields:
+
+- `std::filesystem::path path` — the user-facing target path
+- `int os_error_code` — `errno` on POSIX, `GetLastError()` on Windows, `0` when the failure isn't OS-derived
+
+| Type | Thrown when |
+|------|-------------|
+| `target_read_only` | The existing target is marked read-only; no temp was created. |
+| `create_temp_failed` | Couldn't open the sibling temp file (missing dir, no write permission, disk full). |
+| `write_failed` | OS write returned an error or made no progress. |
+| `fsync_temp_failed` | Couldn't flush the temp's data to disk before rename. |
+| `permission_copy_failed` | Couldn't copy attributes from the existing target onto the new temp. |
+| `cross_filesystem` | Rename would cross filesystems and `set_direct_write_fallback(true)` isn't set. |
+| `rename_failed` | Atomic rename failed for some other reason (busy file on Windows, target's directory removed mid-operation, etc.). |
+| `direct_write_failed` | The fallback copy + remove (after `set_direct_write_fallback(true)`) failed. |
+| `fsync_parent_dir_failed` | POSIX only; rename succeeded but the parent-directory metadata sync didn't. |
+
+### Caveats
+
+⚠️ `commit()` must be called explicitly. Destroying the writer without committing is the discard path, not a flush.
 
 ---
 
