@@ -3,8 +3,6 @@
 #include <format>
 #include <sstream>
 
-#include <fmt/format.h>
-
 TEST_CASE("fixed_string: literal deduces N as meaningful length", "[fixed_string]") {
     constexpr collab::fixed_string s = "hello";
     STATIC_REQUIRE(std::is_same_v<decltype(s), const collab::fixed_string<5>>);
@@ -174,12 +172,6 @@ TEST_CASE("fixed_string: operator<< streams the contents", "[fixed_string]") {
     std::ostringstream os;
     os << s;
     REQUIRE(os.str() == "hello");
-}
-
-TEST_CASE("fixed_string: fmt::format directly on fixed_string", "[fixed_string]") {
-    collab::fixed_string s = "world";
-    auto out = fmt::format("hello {}", s);
-    REQUIRE(out == "hello world");
 }
 
 TEST_CASE("fixed_string: std::format via implicit string_view conversion", "[fixed_string]") {

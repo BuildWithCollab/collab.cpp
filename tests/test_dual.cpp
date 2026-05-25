@@ -47,3 +47,9 @@ TEST_CASE("fixed_string: std::format directly on fixed_string", "[fixed_string]"
     REQUIRE(out == "hello world");
 }
 
+TEST_CASE("fixed_string: fmt::format directly on fixed_string", "[fixed_string]") {
+    collab::fixed_string s = "world";
+    auto out = fmt::format("hello {}", s);
+    REQUIRE(out == "hello world");
+}
+
