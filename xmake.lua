@@ -128,3 +128,14 @@ if get_config("build_tests") then
         target_end()
     end
 end
+
+-- ─── Codegen ────────────────────────────────────────────────────────────────
+-- Regenerates the per-area decls header, module partition, and force-emission
+-- impl unit from each canonical inline header in include/collab/*.hpp.
+-- Run with: xmake build codegen
+target("codegen")
+    set_kind("phony")
+    on_build(function (target)
+        os.exec("python scripts/generate.py")
+    end)
+target_end()
