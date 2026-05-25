@@ -42,6 +42,19 @@ Everything lives under `collab::` (types, error, publisher), `collab::log::` (lo
 
 ✅ available · ⚠️ partial · ❌ not available
 
+### MSVC VS2022 note
+
+On MSVC VS2022, `import collab;` alone does **not** surface the `std::hash` / `std::formatter` / `fmt::formatter` specializations for `fixed_string` to the importer translation unit. If you only `import` the library on VS2022 and then call `std::format("{}", fs)` or `std::hash<collab::fixed_string<N>>{}(fs)`, you'll get a compile error.
+
+Workaround: add `#include <collab.hpp>` alongside the import (order doesn't matter):
+
+```cpp
+#include <collab.hpp>
+import collab;
+```
+
+VS2026, Clang, and GCC 15+ lift this limitation — `import collab;` alone is enough on those toolchains.
+
 ---
 
 ## Library conventions

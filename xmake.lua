@@ -17,6 +17,22 @@ option("build_tests")
     set_description("Build test targets")
 option_end()
 
+-- Some toolchains (notably MSVC VS2022) do not surface partial specializations
+-- of templates from other namespaces (std::hash, std::formatter, fmt::formatter
+-- on a fixed_string) from the module's GMF to importer translation units. On
+-- those toolchains the pure-import-only tests that exercise these specializations
+-- fail to compile. Set this to false for VS2022 CI; users on VS2022 who want
+-- those specializations must `#include <collab.hpp>` alongside `import collab;`.
+option("test_pure_import_specializations")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Include tests that exercise foreign-template specializations through the pure-import-only path (default true; set false on MSVC VS2022).")
+option_end()
+
+if not get_config("test_pure_import_specializations") then
+    add_defines("COLLAB_SKIP_PURE_IMPORT_SPECIALIZATION_TESTS")
+end
+
 if get_config("header_only") then
     add_requires("fmt", { configs = { header_only = true } })
 else

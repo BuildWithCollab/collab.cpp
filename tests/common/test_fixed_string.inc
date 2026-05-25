@@ -160,12 +160,18 @@ TEST_CASE("fixed_string: char-type aliases compile", "[fixed_string]") {
     STATIC_REQUIRE(ws.size  == 3);
 }
 
+// Skipped in pure-import mode on toolchains that don't surface foreign-template
+// specializations from the module's GMF (see test_pure_import_specializations
+// xmake option). In include and dual modes COLLAB_HEADER_INCLUDED is set, so
+// the spec comes through the header and the test runs.
+#if !defined(COLLAB_SKIP_PURE_IMPORT_SPECIALIZATION_TESTS) || defined(COLLAB_HEADER_INCLUDED)
 TEST_CASE("fixed_string: std::hash agrees with string_view hash", "[fixed_string]") {
     collab::fixed_string s = "hello";
     auto h_fs = std::hash<collab::fixed_string<5>>{}(s);
     auto h_sv = std::hash<std::string_view>{}(std::string_view("hello"));
     REQUIRE(h_fs == h_sv);
 }
+#endif
 
 TEST_CASE("fixed_string: operator<< streams the contents", "[fixed_string]") {
     collab::fixed_string s = "hello";
