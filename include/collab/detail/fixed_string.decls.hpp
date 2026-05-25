@@ -210,5 +210,64 @@ template<std::size_t N> using fixed_wstring   = basic_fixed_string<wchar_t,  N>;
 
 }  // namespace collab
 
+namespace std {
 
+template<std::size_t N>
+struct hash<collab::fixed_string<N>> : hash<string_view> {
+    size_t operator()(const collab::fixed_string<N>& s) const noexcept {
+        return hash<string_view>::operator()(s.view());
+    }
+};
+
+template<std::size_t N>
+struct hash<collab::fixed_u8string<N>> : hash<u8string_view> {
+    size_t operator()(const collab::fixed_u8string<N>& s) const noexcept {
+        return hash<u8string_view>::operator()(s.view());
+    }
+};
+
+template<std::size_t N>
+struct hash<collab::fixed_u16string<N>> : hash<u16string_view> {
+    size_t operator()(const collab::fixed_u16string<N>& s) const noexcept {
+        return hash<u16string_view>::operator()(s.view());
+    }
+};
+
+template<std::size_t N>
+struct hash<collab::fixed_u32string<N>> : hash<u32string_view> {
+    size_t operator()(const collab::fixed_u32string<N>& s) const noexcept {
+        return hash<u32string_view>::operator()(s.view());
+    }
+};
+
+template<std::size_t N>
+struct hash<collab::fixed_wstring<N>> : hash<wstring_view> {
+    size_t operator()(const collab::fixed_wstring<N>& s) const noexcept {
+        return hash<wstring_view>::operator()(s.view());
+    }
+};
+
+template<class CharT, std::size_t N, class Traits>
+struct formatter<collab::basic_fixed_string<CharT, N, Traits>, CharT>
+    : formatter<basic_string_view<CharT, Traits>, CharT> {
+    template<class FormatContext>
+    auto format(const collab::basic_fixed_string<CharT, N, Traits>& s, FormatContext& ctx) const {
+        return formatter<basic_string_view<CharT, Traits>, CharT>::format(s.view(), ctx);
+    }
+};
+
+}  // namespace std
+
+namespace fmt {
+
+template<class CharT, std::size_t N, class Traits>
+struct formatter<collab::basic_fixed_string<CharT, N, Traits>, CharT>
+    : formatter<std::basic_string_view<CharT, Traits>, CharT> {
+    template<class FormatContext>
+    auto format(const collab::basic_fixed_string<CharT, N, Traits>& s, FormatContext& ctx) const {
+        return formatter<std::basic_string_view<CharT, Traits>, CharT>::format(s.view(), ctx);
+    }
+};
+
+}  // namespace fmt
 
