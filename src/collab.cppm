@@ -3,7 +3,6 @@
 
 export module collab;
 
-export import :atomic_file_writer;
 export import :error;
 export import :fixed_string;
 export import :identifier;
@@ -12,3 +11,4 @@ export import :manifest;
 export import :publisher;
 export import :log;
 export import :term;
+export import :atomic_file_writer;
