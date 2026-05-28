@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/semver.decls.hpp>
+#include "semver.decls.hpp"
 
 export module collab:semver;
 

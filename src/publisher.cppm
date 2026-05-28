@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/publisher.decls.hpp>
+#include "publisher.decls.hpp"
 
 export module collab:publisher;
 

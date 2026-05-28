@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/term.decls.hpp>
+#include "term.decls.hpp"
 
 export module collab:term;
 

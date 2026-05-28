@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/atomic_file_writer.decls.hpp>
+#include "atomic_file_writer.decls.hpp"
 
 export module collab:atomic_file_writer;
 

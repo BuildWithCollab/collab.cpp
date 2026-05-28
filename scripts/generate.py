@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # Codegen for the dual-mode architecture (see MODULE_DUAL_MODE_CODEGEN.md).
 #
-# Input:  include/collab/<area>.hpp                (canonical inline header)
-# Output: include/collab/detail/<area>.decls.hpp   (declarations only)
-#         src/<area>.cppm                          (module partition)
-#         src/<area>_impl.cpp                      (force-emission impl unit)
+# Input:  include/collab/<area>.hpp   (canonical inline header)
+# Output: src/<area>.decls.hpp        (declarations only — build-internal)
+#         src/<area>.cppm             (module partition)
+#         src/<area>_impl.cpp         (force-emission impl unit)
 #
 # Convention assumed of canonical headers:
 #   1. One declaration per line at namespace scope.
@@ -29,7 +29,6 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
 INCLUDE_DIR = ROOT / "include" / "collab"
-DETAIL_DIR = INCLUDE_DIR / "detail"
 SRC_DIR = ROOT / "src"
 
 MODULE_NAME = "collab"
@@ -644,7 +643,7 @@ def emit_cppm(area: str, state: AreaState) -> str:
         GEN_HEADER,
         "module;",
         "",
-        f"#include <collab/detail/{area}.decls.hpp>",
+        f'#include "{area}.decls.hpp"',
         "",
         f"export module {MODULE_NAME}:{area};",
         "",
@@ -722,10 +721,9 @@ def generate_area(area: str) -> None:
     text = canonical.read_text(encoding="utf-8")
     state = parse(text)
 
-    DETAIL_DIR.mkdir(parents=True, exist_ok=True)
     SRC_DIR.mkdir(parents=True, exist_ok=True)
 
-    (DETAIL_DIR / f"{area}.decls.hpp").write_text(emit_decls(area, state), encoding="utf-8")
+    (SRC_DIR / f"{area}.decls.hpp").write_text(emit_decls(area, state), encoding="utf-8")
     (SRC_DIR / f"{area}.cppm").write_text(emit_cppm(area, state), encoding="utf-8")
     (SRC_DIR / f"{area}_impl.cpp").write_text(emit_impl(area, state), encoding="utf-8")
     print(f"  generated {area}: "

@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/identifier.decls.hpp>
+#include "identifier.decls.hpp"
 
 export module collab:identifier;
 

@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/manifest.decls.hpp>
+#include "manifest.decls.hpp"
 
 export module collab:manifest;
 

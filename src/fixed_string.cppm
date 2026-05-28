@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/fixed_string.decls.hpp>
+#include "fixed_string.decls.hpp"
 
 export module collab:fixed_string;
 

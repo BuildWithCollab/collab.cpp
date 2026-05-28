@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/error.decls.hpp>
+#include "error.decls.hpp"
 
 export module collab:error;
 

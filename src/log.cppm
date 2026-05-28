@@ -2,7 +2,7 @@
 
 module;
 
-#include <collab/detail/log.decls.hpp>
+#include "log.decls.hpp"
 
 export module collab:log;
 
