@@ -11,7 +11,7 @@ using namespace ::collab::log;
 #if defined(__GNUC__) || defined(__clang__)
 [[gnu::used]]
 #endif
-[[maybe_unused]] const void* const _emit_log_symbols[] = {
+[[maybe_unused]] const void* const _emit_collab_log_symbols[] = {
     reinterpret_cast<const void*>(static_cast<void (*)(level)>(&::collab::log::set_level)),
     reinterpret_cast<const void*>(static_cast<level (*)()>(&::collab::log::get_level)),
     reinterpret_cast<const void*>(static_cast<void (*)(std::unique_ptr<sink>)>(&::collab::log::add_sink)),

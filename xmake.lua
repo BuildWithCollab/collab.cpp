@@ -135,22 +135,7 @@ end
 -- Run with: xmake codegen
 task("codegen")
     on_run(function ()
-        local headers = {
-            "atomic_file_writer.hpp",
-            "error.hpp",
-            "fixed_string.hpp",
-            "identifier.hpp",
-            "log.hpp",
-            "manifest.hpp",
-            "publisher.hpp",
-            "semver.hpp",
-            "term.hpp",
-        }
-        local args = "--name collab --include include/collab --src src"
-        for _, h in ipairs(headers) do
-            args = args .. " --header " .. h
-        end
-        os.exec("python scripts/generate.py " .. args)
+        os.exec("python scripts/generate.py include/collab/*.hpp --module-name collab --src-out src")
     end)
     set_menu({
         usage       = "xmake codegen",

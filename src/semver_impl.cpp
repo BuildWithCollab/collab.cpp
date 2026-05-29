@@ -11,7 +11,7 @@ using namespace ::collab::detail;
 #if defined(__GNUC__) || defined(__clang__)
 [[gnu::used]]
 #endif
-[[maybe_unused]] const void* const _emit_semver_symbols[] = {
+[[maybe_unused]] const void* const _emit_collab_semver_symbols[] = {
     reinterpret_cast<const void*>(static_cast<std::vector<std::string_view> (*)(std::string_view)>(&::collab::detail::split_identifiers)),
     reinterpret_cast<const void*>(static_cast<bool (*)(std::string_view)>(&::collab::detail::is_numeric_identifier)),
     reinterpret_cast<const void*>(static_cast<unsigned long long (*)(std::string_view)>(&::collab::detail::parse_numeric)),

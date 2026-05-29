@@ -11,7 +11,7 @@ using namespace ::collab;
 #if defined(__GNUC__) || defined(__clang__)
 [[gnu::used]]
 #endif
-[[maybe_unused]] const void* const _emit_atomic_file_writer_symbols[] = {
+[[maybe_unused]] const void* const _emit_collab_atomic_file_writer_symbols[] = {
     reinterpret_cast<const void*>(static_cast<void (*)(std::filesystem::path, std::span<const std::byte>)>(&::collab::atomic_file_write)),
     reinterpret_cast<const void*>(static_cast<void (*)(std::filesystem::path, std::string_view)>(&::collab::atomic_file_write)),
 };

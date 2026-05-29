@@ -42,6 +42,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import re
 import sys
 from dataclasses import dataclass, field
@@ -645,6 +646,17 @@ def emit_decls(state: AreaState) -> str:
     return "\n".join(out) + "\n"
 
 
+def emit_cppm(name: str, area: str) -> str:
+    """The hand-written-shaped 5-line partition scaffold, generated."""
+    return (
+        GEN_HEADER
+        + "module;\n"
+        + f'#include "{area}.decls.hpp"\n'
+        + f"export module {name}:{area};\n"
+        + f'#include "{area}.exports.inc"\n'
+    )
+
+
 def emit_exports_inc(state: AreaState) -> str:
     pairs = state.using_names()
     # Group using-decls by namespace.
@@ -662,9 +674,9 @@ def emit_exports_inc(state: AreaState) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def emit_impl(name: str, rel: Path, state: AreaState) -> str:
-    include_path = f"{name}/{rel.as_posix()}.hpp"
-    flat = _flat(rel)
+def emit_impl(name: str, rel_include: Path, state: AreaState) -> str:
+    include_path = rel_include.as_posix()
+    flat = _flat(rel_include.with_suffix(""))
     lines = [
         GEN_HEADER,
         "module;",
@@ -718,20 +730,20 @@ def _flat(rel: Path) -> str:
 
 # ── Driver ──────────────────────────────────────────────────────────────────
 
-def generate_area(name: str, include_root: Path, src_root: Path, rel: Path) -> None:
-    canonical = include_root / rel.with_suffix(".hpp")
+def generate_area(name: str, src_root: Path, canonical: Path, rel_include: Path) -> None:
     if not canonical.is_file():
         raise SystemExit(f"no canonical header at {canonical}")
     text = canonical.read_text(encoding="utf-8")
     state = parse(text)
 
-    out_dir = src_root / rel.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
+    area = canonical.stem
+    src_root.mkdir(parents=True, exist_ok=True)
 
-    (out_dir / f"{rel.name}.decls.hpp").write_text(emit_decls(state), encoding="utf-8")
-    (out_dir / f"{rel.name}.exports.inc").write_text(emit_exports_inc(state), encoding="utf-8")
-    (out_dir / f"{rel.name}_impl.cpp").write_text(emit_impl(name, rel, state), encoding="utf-8")
-    print(f"  generated {rel.as_posix()}: "
+    (src_root / f"{area}.decls.hpp").write_text(emit_decls(state), encoding="utf-8")
+    (src_root / f"{area}.exports.inc").write_text(emit_exports_inc(state), encoding="utf-8")
+    (src_root / f"{area}.cppm").write_text(emit_cppm(name, area), encoding="utf-8")
+    (src_root / f"{area}_impl.cpp").write_text(emit_impl(name, rel_include, state), encoding="utf-8")
+    print(f"  generated {area}: "
           f"{len(state.inline_functions)} inline fns, "
           f"{len(state.inline_variables)} inline vars, "
           f"{len(state.types)} types, "
@@ -741,29 +753,50 @@ def generate_area(name: str, include_root: Path, src_root: Path, rel: Path) -> N
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Regenerate per-area decls headers, exports snippets, and impl units."
+        description="Regenerate dual-mode bridging artifacts (decls header, "
+                    "exports snippet, partition cppm, and force-emission impl) "
+                    "for the canonical inline headers passed on the command line."
     )
-    parser.add_argument("--name", required=True,
-                        help="Module name. Used in `export module <name>:<part>;`, "
-                             "`module <name>;`, and as the first segment of the impl "
-                             "unit's `#include <<name>/<rel>.hpp>` line.")
-    parser.add_argument("--include", required=True, type=Path,
-                        help="Root of the include tree (used to resolve --header paths "
-                             "and as the dir whose layout is mirrored into --src).")
-    parser.add_argument("--src", required=True, type=Path,
-                        help="Directory to write the generated artifacts into. "
-                             "Output mirrors the relative layout under --include.")
-    parser.add_argument("--header", required=True, action="append", metavar="REL_PATH",
-                        help="A canonical header path RELATIVE TO --include, designating "
-                             "one dual-mode area to process. Repeatable; pass once per "
-                             "header you want exposed dual-mode.")
+    parser.add_argument("canonical", nargs="+", type=Path, metavar="CANONICAL_HPP",
+                        help="One or more canonical inline-header paths. Typically "
+                             "passed via a shell glob, e.g. `include/<lib>/*.hpp`.")
+    parser.add_argument("--module-name", required=True,
+                        help="C++ module name. Used in `export module <name>:<part>;` "
+                             "and `module <name>;` lines of the generated artifacts.")
+    parser.add_argument("--src-out", required=True, type=Path,
+                        help="Directory to write the generated artifacts into "
+                             "(decls.hpp, exports.inc, cppm, _impl.cpp).")
     args = parser.parse_args(argv[1:])
 
-    for header in args.header:
-        rel = Path(header)
-        if rel.suffix == ".hpp":
-            rel = rel.with_suffix("")
-        generate_area(args.name, args.include, args.src, rel)
+    # Expand any wildcard patterns in the canonical paths. We do this in
+    # Python rather than relying on shell expansion so that callers (xmake's
+    # os.exec, Windows cmd, etc.) that don't shell-expand still work.
+    canonicals: list[Path] = []
+    for arg in args.canonical:
+        s = str(arg)
+        if any(c in s for c in "*?["):
+            matches = sorted(glob.glob(s, recursive=True))
+            if not matches:
+                raise SystemExit(f"pattern matched no files: {s}")
+            canonicals.extend(Path(m) for m in matches)
+        else:
+            canonicals.append(arg)
+
+    # Each canonical's include line is derived from its path: we look for the
+    # module-name as a path segment and use everything from that segment onward
+    # as the angle-bracket include path. e.g. `include/foo/audio/buffer.hpp`
+    # with --module-name foo → `#include <foo/audio/buffer.hpp>`.
+    for canonical in canonicals:
+        parts = canonical.parts
+        try:
+            idx = parts.index(args.module_name)
+        except ValueError:
+            raise SystemExit(
+                f"path {canonical} does not contain `{args.module_name}` as a "
+                f"directory segment — cannot derive the include path"
+            )
+        rel_include = Path(*parts[idx:])
+        generate_area(args.module_name, args.src_out, canonical, rel_include)
     return 0
 
 
