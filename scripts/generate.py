@@ -1,16 +1,31 @@
 #!/usr/bin/env python3
-# Codegen for the dual-mode architecture (see MODULE_DUAL_MODE_CODEGEN.md).
+# Codegen for the dual-mode architecture.
 #
 # Recursively scans --include for canonical inline headers (skipping any
-# `detail/` subdir), and for each one at <include>/<rel>.hpp emits:
+# `detail/` subdir), and for each one at <include>/<rel>.hpp emits THREE
+# build-time artifacts (NOT a module partition):
 #
-#   <src>/<rel>.decls.hpp   declarations only — build-internal
-#   <src>/<rel>.cppm        module partition  — `module <name>:<flat-rel>;`
-#   <src>/<rel>_impl.cpp    force-emission impl unit
+#   <src>/<rel>.decls.hpp     declarations only — for the user's hand-written
+#                             partition cppm to #include in its GMF.
+#   <src>/<rel>.exports.inc   `export namespace …` blocks with `using ::ns::name;`
+#                             re-exports — for the user's partition cppm to
+#                             #include in module purview after `export module …;`.
+#   <src>/<rel>_impl.cpp      regular non-module TU. Force-emits inline function
+#                             bodies as global-module COMDAT symbols so `import`
+#                             consumers can link. Compiled into the static archive.
 #
-# The impl unit's canonical include is `<<name>/<rel>.hpp>`. <flat-rel> is
-# the relative path with separators flattened to underscores so it's usable
-# as a C++ identifier (for the partition name and the force-emission array).
+# The codegen does NOT generate any .cppm files. The user keeps full control of
+# their module architecture — the partition cppm(s) that consume these artifacts
+# are hand-written. Typically each partition cppm is a 5-line scaffold:
+#
+#   module;
+#   #include "<rel>.decls.hpp"
+#   export module <name>:<part>;
+#   #include "<rel>.exports.inc"
+#
+# That scaffold doesn't change when the canonical evolves — adding/removing
+# functions in the canonical and re-running codegen updates the decls / exports
+# / impl in place, no partition cppm edit needed.
 #
 # Convention assumed of canonical headers:
 #   1. One declaration per line at namespace scope.
@@ -630,23 +645,14 @@ def emit_decls(state: AreaState) -> str:
     return "\n".join(out) + "\n"
 
 
-def emit_cppm(name: str, rel: Path, state: AreaState) -> str:
+def emit_exports_inc(state: AreaState) -> str:
     pairs = state.using_names()
     # Group using-decls by namespace.
     by_ns: dict[str, list[str]] = {}
     for ns, n in pairs:
         by_ns.setdefault(ns, []).append(n)
 
-    partition = _flat(rel)
-    lines = [
-        GEN_HEADER,
-        "module;",
-        "",
-        f'#include "{rel.name}.decls.hpp"',
-        "",
-        f"export module {name}:{partition};",
-        "",
-    ]
+    lines = [GEN_HEADER]
     for ns, names in by_ns.items():
         lines.append(f"export namespace {ns} {{")
         for n in names:
@@ -712,18 +718,6 @@ def _flat(rel: Path) -> str:
 
 # ── Driver ──────────────────────────────────────────────────────────────────
 
-def discover_areas(include_root: Path) -> list[Path]:
-    """All canonical inline headers under include_root (recursive, skipping any
-    `detail` segment). Returns relative paths sans `.hpp` extension."""
-    out: list[Path] = []
-    for p in sorted(include_root.rglob("*.hpp")):
-        rel = p.relative_to(include_root).with_suffix("")
-        if any(part == "detail" for part in rel.parts):
-            continue
-        out.append(rel)
-    return out
-
-
 def generate_area(name: str, include_root: Path, src_root: Path, rel: Path) -> None:
     canonical = include_root / rel.with_suffix(".hpp")
     if not canonical.is_file():
@@ -735,7 +729,7 @@ def generate_area(name: str, include_root: Path, src_root: Path, rel: Path) -> N
     out_dir.mkdir(parents=True, exist_ok=True)
 
     (out_dir / f"{rel.name}.decls.hpp").write_text(emit_decls(state), encoding="utf-8")
-    (out_dir / f"{rel.name}.cppm").write_text(emit_cppm(name, rel, state), encoding="utf-8")
+    (out_dir / f"{rel.name}.exports.inc").write_text(emit_exports_inc(state), encoding="utf-8")
     (out_dir / f"{rel.name}_impl.cpp").write_text(emit_impl(name, rel, state), encoding="utf-8")
     print(f"  generated {rel.as_posix()}: "
           f"{len(state.inline_functions)} inline fns, "
@@ -747,21 +741,28 @@ def generate_area(name: str, include_root: Path, src_root: Path, rel: Path) -> N
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Regenerate per-area decls headers, module partitions, and impl units."
+        description="Regenerate per-area decls headers, exports snippets, and impl units."
     )
     parser.add_argument("--name", required=True,
                         help="Module name. Used in `export module <name>:<part>;`, "
                              "`module <name>;`, and as the first segment of the impl "
                              "unit's `#include <<name>/<rel>.hpp>` line.")
     parser.add_argument("--include", required=True, type=Path,
-                        help="Directory holding the canonical inline headers. "
-                             "Scanned recursively; any `detail/` subdir is skipped.")
+                        help="Root of the include tree (used to resolve --header paths "
+                             "and as the dir whose layout is mirrored into --src).")
     parser.add_argument("--src", required=True, type=Path,
-                        help="Directory to write the generated module artifacts into. "
+                        help="Directory to write the generated artifacts into. "
                              "Output mirrors the relative layout under --include.")
+    parser.add_argument("--header", required=True, action="append", metavar="REL_PATH",
+                        help="A canonical header path RELATIVE TO --include, designating "
+                             "one dual-mode area to process. Repeatable; pass once per "
+                             "header you want exposed dual-mode.")
     args = parser.parse_args(argv[1:])
 
-    for rel in discover_areas(args.include):
+    for header in args.header:
+        rel = Path(header)
+        if rel.suffix == ".hpp":
+            rel = rel.with_suffix("")
         generate_area(args.name, args.include, args.src, rel)
     return 0
 
